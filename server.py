@@ -337,6 +337,9 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         public_path = self.path.split("?", 1)[0].split("#", 1)[0]
+        if public_path == "/healthz":
+            json_response(self, 200, {"ok": True})
+            return
         if public_path == "/api/app-state":
             json_response(self, 200, {"state": read_app_state()})
             return
