@@ -1,4 +1,3 @@
-import base64
 import json
 import mimetypes
 import os
@@ -25,6 +24,7 @@ DATA_DIR = Path(os.getenv("DATA_DIR", str(ROOT / "data"))).resolve()
 UPLOAD_DIR = DATA_DIR / "uploads"
 STATE_FILE = DATA_DIR / "app_state.json"
 OPENAI_API_URL = "https://api.openai.com/v1/responses"
+OPENAI_FILES_URL = "https://api.openai.com/v1/files"
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
 MAX_TEXT_CHARS = 45000
 RETENTION_DAYS = 30
@@ -256,7 +256,7 @@ def response_text(payload):
     return "\n".join(parts).strip()
 
 
-def call_openai(input_items, max_output_tokens=1200):
+def get_openai_api_key():
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip().strip('"').strip("'")
     if not api_key:
         raise RuntimeError("Falta configurar OPENAI_API_KEY en el ambiente del servidor.")
@@ -264,6 +264,62 @@ def call_openai(input_items, max_output_tokens=1200):
         raise RuntimeError(
             "OPENAI_API_KEY está mal configurada. En Render debe ir solo la key real, sin comillas ni comandos."
         )
+    return api_key
+
+
+def multipart_body(fields, files):
+    boundary = f"----pichudos-{uuid.uuid4().hex}"
+    chunks = []
+
+    for name, value in fields.items():
+        chunks.append(f"--{boundary}\r\n".encode("utf-8"))
+        chunks.append(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
+        chunks.append(str(value).encode("utf-8"))
+        chunks.append(b"\r\n")
+
+    for name, file_info in files.items():
+        filename = file_info["filename"]
+        content_type = file_info.get("content_type") or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        chunks.append(f"--{boundary}\r\n".encode("utf-8"))
+        chunks.append(
+            (
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode("utf-8")
+        )
+        chunks.append(file_info["bytes"])
+        chunks.append(b"\r\n")
+
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return boundary, b"".join(chunks)
+
+
+def upload_openai_file(filename, data, content_type):
+    boundary, body = multipart_body(
+        {"purpose": "user_data"},
+        {"file": {"filename": filename, "bytes": data, "content_type": content_type}},
+    )
+    request = urllib.request.Request(
+        OPENAI_FILES_URL,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {get_openai_api_key()}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(body)),
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            return payload["id"]
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"OpenAI Files respondió {exc.code}: {details}") from exc
+
+
+def call_openai(input_items, max_output_tokens=1200):
+    api_key = get_openai_api_key()
 
     payload = {
         "model": DEFAULT_MODEL,
@@ -413,12 +469,12 @@ class AppHandler(SimpleHTTPRequestHandler):
         content = [{"type": "input_text", "text": build_analysis_prompt(plan_type, filename, extracted, user_notes)}]
 
         if not extracted:
-            encoded = base64.b64encode(data).decode("ascii")
+            openai_file_id = upload_openai_file(filename, data, file_data["content_type"])
             content = [
                 {
                     "type": "input_file",
                     "filename": filename,
-                    "file_data": encoded,
+                    "file_id": openai_file_id,
                 },
                 {
                     "type": "input_text",
