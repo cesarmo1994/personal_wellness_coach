@@ -196,6 +196,7 @@ async function analyzePlanFile(planType, file) {
   const formData = new FormData();
   formData.append("planType", planType);
   formData.append("file", file);
+  formData.append("notes", document.querySelector("#plan-upload-notes")?.value.trim() || "");
   const response = await fetch("/api/analyze-plan", { method: "POST", body: formData });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -466,10 +467,13 @@ document.querySelectorAll("[data-plan-input]").forEach((input) => {
         responseId: analysis.responseId,
         extraction: analysis.extraction,
         fileUrl: analysis.fileUrl,
+        notes: analysis.notes,
         updatedAt: new Date().toISOString(),
       };
       addPersonalMessage("system", `Plan de ${planNames[key]} cargado y analizado: ${file.name}`);
       addPersonalMessage("coach", analysis.summary);
+      const notes = document.querySelector("#plan-upload-notes");
+      if (notes) notes.value = "";
     } catch (error) {
       currentUser().plans[key] = {
         name: file.name,

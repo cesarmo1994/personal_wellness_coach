@@ -274,19 +274,24 @@ def call_openai(input_items, max_output_tokens=1200):
         raise RuntimeError(f"OpenAI respondió {exc.code}: {details}") from exc
 
 
-def build_analysis_prompt(plan_type, filename, extracted_text):
+def build_analysis_prompt(plan_type, filename, extracted_text, user_notes=""):
     label = PLAN_LABELS.get(plan_type, plan_type)
+    notes_block = user_notes.strip() if user_notes and user_notes.strip() else "Sin descripción adicional."
     return f"""
 Analizá este documento como plan de {label}.
 
 Archivo: {filename}
+
+Descripción/contexto dado por el usuario:
+{notes_block}
 
 Quiero que devuelvas:
 1. Resumen del plan.
 2. Objetivo semanal sugerido.
 3. Acciones diarias para check-in.
 4. Alertas, restricciones o datos faltantes.
-5. Cómo debería usarlo el coach IA en conversaciones futuras.
+5. Cómo combinar la información del documento con la descripción del usuario.
+6. Cómo debería usarlo el coach IA en conversaciones futuras.
 
 Contenido extraído:
 {extracted_text}
@@ -375,6 +380,7 @@ class AppHandler(SimpleHTTPRequestHandler):
     def handle_analyze_plan(self):
         fields, files = parse_multipart(self.headers, read_request_body(self))
         plan_type = fields.get("planType", "wellness")
+        user_notes = fields.get("notes", "")
         file_data = files.get("file")
         if not file_data:
             json_response(self, 400, {"error": "No se recibió archivo."})
@@ -387,7 +393,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         (UPLOAD_DIR / stored_name).write_bytes(data)
         file_url = f"/uploads/{stored_name}"
         extracted = trim_text(extract_text(filename, data))
-        content = [{"type": "input_text", "text": build_analysis_prompt(plan_type, filename, extracted)}]
+        content = [{"type": "input_text", "text": build_analysis_prompt(plan_type, filename, extracted, user_notes)}]
 
         if not extracted:
             encoded = base64.b64encode(data).decode("ascii")
@@ -403,6 +409,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                         plan_type,
                         filename,
                         "El archivo se adjuntó para que el modelo lo lea directamente.",
+                        user_notes,
                     ),
                 },
             ]
@@ -418,6 +425,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "responseId": response_id,
                 "extraction": "text" if extracted else "file",
                 "fileUrl": file_url,
+                "notes": user_notes,
             },
         )
 
