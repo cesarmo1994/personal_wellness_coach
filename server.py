@@ -473,7 +473,6 @@ class AppHandler(SimpleHTTPRequestHandler):
             content = [
                 {
                     "type": "input_file",
-                    "filename": filename,
                     "file_id": openai_file_id,
                 },
                 {
