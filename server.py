@@ -240,9 +240,13 @@ def response_text(payload):
 
 
 def call_openai(input_items, max_output_tokens=1200):
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip().strip('"').strip("'")
     if not api_key:
         raise RuntimeError("Falta configurar OPENAI_API_KEY en el ambiente del servidor.")
+    if "\n" in api_key or "\r" in api_key or "$env:" in api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY está mal configurada. En Render debe ir solo la key real, sin comillas ni comandos."
+        )
 
     payload = {
         "model": DEFAULT_MODEL,
