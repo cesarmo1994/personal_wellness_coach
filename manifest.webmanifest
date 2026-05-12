@@ -1,0 +1,18 @@
+{
+  "name": "The Pichudo's App",
+  "short_name": "Pichudo's",
+  "description": "Wellness coach privado para planes, check-ins y accountability groups.",
+  "lang": "es",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f7f4ee",
+  "theme_color": "#557865",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

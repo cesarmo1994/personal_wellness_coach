@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f4ee" />
+    <title>The Pichudo's App</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="phone" aria-label="The Pichudo's App">
+        <header class="app-header">
+          <button class="brand-button" data-view="coach" aria-label="Ir al coach">
+            <span class="brand-mark">P</span>
+            <span>
+              <strong>The Pichudo's App</strong>
+              <small id="screen-subtitle">Wellness coach privado</small>
+            </span>
+          </button>
+          <label class="user-switch">
+            <span>Usuario</span>
+            <select id="user-select" aria-label="Seleccionar usuario"></select>
+          </label>
+          <button class="icon-button" id="reset-demo" title="Reiniciar demo" aria-label="Reiniciar demo">R</button>
+        </header>
+
+        <section class="view active" id="view-onboarding">
+          <div class="hero-copy">
+            <p class="eyebrow">Beta privada</p>
+            <h1>Tu coach diario para cumplir el plan con tus compas.</h1>
+            <p>Carga tus planes, haz check-ins con evidencia y conversa en grupo. El coach entra al chat grupal solo cuando alguien escribe @coach.</p>
+          </div>
+
+          <article class="goal-card">
+            <div>
+              <span>Objetivo semanal de <span data-current-user></span></span>
+              <strong><span data-weekly-count>0</span> de 7 check-ins</strong>
+            </div>
+            <div class="progress"><i data-weekly-progress></i></div>
+            <small>La meta inicial es simple: mostrar avance diario.</small>
+          </article>
+
+          <button class="primary-action" data-view="plan">Crear mi plan</button>
+          <button class="secondary-action" data-view="group">Entrar al chat grupal</button>
+        </section>
+
+        <section class="view" id="view-plan">
+          <div class="screen-title">
+            <p>Plan activo de <span data-current-user></span></p>
+            <h2>Sube o crea tus planes</h2>
+          </div>
+
+          <div class="upload-list">
+            <article class="upload-item" data-plan-card="nutrition">
+              <div class="upload-icon">+</div>
+              <div>
+                <strong>Plan nutricional</strong>
+                <span>PDF, Excel, Word o texto</span>
+                <small data-plan-status="nutrition">Pendiente</small>
+              </div>
+              <div class="plan-actions">
+                <label class="file-trigger">
+                  Cargar
+                  <input type="file" data-plan-input="nutrition" accept=".pdf,.xls,.xlsx,.csv,.txt,.docx,.doc" />
+                </label>
+                <button class="mini-action ghost" data-create-plan="nutrition" type="button">IA</button>
+              </div>
+            </article>
+
+            <article class="upload-item" data-plan-card="training">
+              <div class="upload-icon">+</div>
+              <div>
+                <strong>Plan entrenamiento</strong>
+                <span>Rutina, calendario, PDF o Excel</span>
+                <small data-plan-status="training">Pendiente</small>
+              </div>
+              <div class="plan-actions">
+                <label class="file-trigger">
+                  Cargar
+                  <input type="file" data-plan-input="training" accept=".pdf,.xls,.xlsx,.csv,.txt,.docx,.doc" />
+                </label>
+                <button class="mini-action ghost" data-create-plan="training" type="button">IA</button>
+              </div>
+            </article>
+
+            <article class="upload-item" data-plan-card="wellness">
+              <div class="upload-icon">IA</div>
+              <div>
+                <strong>Plan wellness</strong>
+                <span>Masajes, grounding, lectura y meditacion</span>
+                <small data-plan-status="wellness">Crear con IA</small>
+              </div>
+              <div class="plan-actions">
+                <label class="file-trigger">
+                  Cargar
+                  <input type="file" data-plan-input="wellness" accept=".pdf,.xls,.xlsx,.csv,.txt,.docx,.doc" />
+                </label>
+                <button class="mini-action" data-create-plan="wellness" type="button">IA</button>
+              </div>
+            </article>
+          </div>
+
+          <form class="builder-card hidden" id="wellness-builder">
+            <input type="hidden" id="builder-plan-type" value="wellness" />
+            <label>
+              <span id="builder-label">Que quieres incluir?</span>
+              <textarea id="wellness-notes" rows="4" placeholder="Ej: objetivo semanal, disponibilidad, restricciones, preferencias, actividades que quieres incluir..."></textarea>
+            </label>
+            <button class="primary-action" type="submit">Crear plan con IA</button>
+          </form>
+
+          <button class="primary-action" data-view="coach">Continuar al coach personal</button>
+        </section>
+
+        <section class="view" id="view-coach">
+          <article class="goal-card compact">
+            <div>
+              <span>Hoy para <span data-current-user></span></span>
+              <strong>Cerrar check-in antes de las 9:00 p.m.</strong>
+            </div>
+            <div class="progress"><i data-weekly-progress></i></div>
+          </article>
+
+          <section class="chat-thread" id="chat-thread" aria-live="polite"></section>
+
+          <form class="composer" id="chat-form">
+            <label class="tool-button">
+              Foto
+              <input type="file" id="photo-input" accept="image/*" />
+            </label>
+            <button class="tool-button" type="button" id="audio-button">Audio</button>
+            <input id="chat-input" type="text" autocomplete="off" placeholder="Chat personal con el coach..." />
+            <button class="send-button" type="submit">Enviar</button>
+          </form>
+        </section>
+
+        <section class="view" id="view-checkin">
+          <div class="screen-title">
+            <p>Check-in diario de <span data-current-user></span></p>
+            <h2>Que lograste hoy?</h2>
+          </div>
+
+          <form id="checkin-form" class="checkin-form">
+            <label class="evidence-card">
+              <input type="file" id="evidence-input" accept="image/*,audio/*" />
+              <span>+</span>
+              <strong>Agregar evidencia</strong>
+              <small id="evidence-name">Foto, audio o texto del dia</small>
+            </label>
+
+            <label class="check-row"><input type="checkbox" name="done" value="Entreno completado" /> Entreno completado</label>
+            <label class="check-row"><input type="checkbox" name="done" value="Nutricion cumplida" /> Nutricion cumplida</label>
+            <label class="check-row"><input type="checkbox" name="done" value="Meditacion o lectura" /> Meditacion o lectura</label>
+            <label class="check-row"><input type="checkbox" name="done" value="Grounding o recuperacion" /> Grounding o recuperacion</label>
+
+            <label>
+              Nota rapida
+              <textarea id="checkin-note" rows="3" placeholder="Ej: Fuerza completa, almuerzo bien, falto meditar."></textarea>
+            </label>
+
+            <button class="primary-action" type="submit">Enviar check-in</button>
+          </form>
+        </section>
+
+        <section class="view" id="view-group">
+          <div class="screen-title">
+            <p>David, Pri, Ana y César</p>
+            <h2>Chat grupal + reto semanal</h2>
+          </div>
+
+          <article class="goal-card compact">
+            <div>
+              <span>Meta del grupo</span>
+              <strong>Todos con evidencia diaria</strong>
+            </div>
+            <div class="progress"><i id="group-progress"></i></div>
+          </article>
+
+          <section class="group-chat-thread" id="group-chat-thread" aria-live="polite"></section>
+
+          <form class="group-composer" id="group-chat-form">
+            <input id="group-chat-input" type="text" autocomplete="off" placeholder="Escribe al grupo. Usa @coach para pedir opinion." />
+            <button class="send-button" type="submit">Enviar</button>
+          </form>
+          <button class="secondary-action compact-action" id="enable-notifications" type="button">Activar notificaciones</button>
+
+          <article class="coach-note">
+            <strong>Regla del coach</strong>
+            <p id="group-note">El coach solo responde cuando alguien lo etiqueta con @coach.</p>
+          </article>
+
+          <section class="member-list" id="member-list"></section>
+        </section>
+
+        <section class="view" id="view-admin">
+          <div class="screen-title">
+            <p>Admin fundador</p>
+            <h2>Gestion privada</h2>
+          </div>
+
+          <section class="stats-grid">
+            <article><span>Usuarios</span><strong id="stat-users">0</strong></article>
+            <article><span>Grupos</span><strong>1</strong></article>
+            <article><span>Hoy</span><strong id="stat-today">0</strong></article>
+          </section>
+
+          <section class="admin-list" id="admin-list"></section>
+        </section>
+
+        <nav class="bottom-nav" aria-label="Navegacion principal">
+          <button data-view="coach" class="active">Coach</button>
+          <button data-view="plan">Plan</button>
+          <button data-view="checkin">Check-in</button>
+          <button data-view="group">Grupo</button>
+          <button data-view="admin">Admin</button>
+        </nav>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

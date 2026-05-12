@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: pichudos-wellness
+    runtime: python
+    plan: starter
+    buildCommand: ""
+    startCommand: python server.py
+    envVars:
+      - key: OPENAI_MODEL
+        value: gpt-5.2
+      - key: DATA_DIR
+        value: /var/data
+      - key: OPENAI_API_KEY
+        sync: false
+    disk:
+      name: pichudos-data
+      mountPath: /var/data
+      sizeGB: 1
