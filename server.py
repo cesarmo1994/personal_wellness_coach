@@ -5,6 +5,7 @@ import os
 import posixpath
 import re
 import time
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -60,7 +61,23 @@ def json_response(handler, status, payload):
     handler.wfile.write(body)
 
 
+def set_data_dir(path):
+    global DATA_DIR, UPLOAD_DIR, STATE_FILE
+    DATA_DIR = Path(path).resolve()
+    UPLOAD_DIR = DATA_DIR / "uploads"
+    STATE_FILE = DATA_DIR / "app_state.json"
+
+
 def ensure_data_dirs():
+    fallback_dir = Path(tempfile.gettempdir()) / "pichudos-data"
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        probe = DATA_DIR / ".write-test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+    except (OSError, PermissionError):
+        set_data_dir(fallback_dir)
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     cutoff = time.time() - RETENTION_DAYS * 24 * 60 * 60
     for item in UPLOAD_DIR.glob("*"):
