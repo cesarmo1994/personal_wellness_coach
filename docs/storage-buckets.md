@@ -179,6 +179,18 @@ SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 ```
 
+Tambien requiere que el rol `service_role` tenga permisos sobre las tablas publicas usadas para metadata. Si aparece un error como:
+
+```text
+permission denied for table profiles
+```
+
+ejecutar la migracion:
+
+```text
+supabase/migrations/202605130003_backend_service_role_grants.sql
+```
+
 Flujo para planes:
 
 1. El usuario carga un PDF, Word, Excel, CSV o TXT.

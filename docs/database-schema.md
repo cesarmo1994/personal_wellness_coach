@@ -10,6 +10,12 @@ La migracion versionada vive en:
 supabase/migrations/202605130001_initial_schema.sql
 ```
 
+Permisos backend para el service role:
+
+```text
+supabase/migrations/202605130003_backend_service_role_grants.sql
+```
+
 ## Proyecto Supabase
 
 Proyecto:
@@ -266,6 +272,12 @@ El proyecto fue creado con:
 - Exposicion automatica de tablas deshabilitada.
 - Automatic RLS habilitado.
 - Postgres default.
+
+Como la exposicion automatica de tablas esta deshabilitada, el backend necesita grants explicitos para operar via PostgREST usando `SUPABASE_SERVICE_ROLE_KEY`. Estos grants se manejan en:
+
+```text
+supabase/migrations/202605130003_backend_service_role_grants.sql
+```
 
 Las politicas RLS completas se implementaran en:
 
