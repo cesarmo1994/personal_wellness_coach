@@ -1,8 +1,33 @@
 # The Pichudo's App
 
-Web app movil para wellness coaching privado entre amigos.
+Web app movil para wellness coaching privado entre amigos, con camino claro hacia una solucion vendible para atletas individuales y equipos deportivos.
 
-## Correr localmente con OpenAI
+## Estado actual
+
+La app corre como una web app mobile-first con backend Python en `server.py` y frontend estatico en `index.html`, `app.js` y `styles.css`.
+
+Capacidades actuales:
+
+- Selector de usuario beta sin contrasena: David, Pri, Ana y Cesar.
+- Plan activo por usuario.
+- Check-ins diarios y evidencia.
+- Chat personal con coach IA.
+- Chat grupal compartido.
+- El coach responde en grupo solo cuando se usa `@coach`.
+- Carga y analisis de planes de nutricion, entrenamiento y wellness.
+- Lectura de PDF con OpenAI Files API.
+- Extraccion local de DOCX, XLSX, CSV, TSV, TXT y MD.
+- Retencion beta de 30 dias usando almacenamiento del servidor.
+- Deploy en Render desde GitHub.
+
+## Documentacion
+
+- [Arquitectura productiva](docs/architecture.md)
+- [Variables de ambiente](docs/environment.md)
+- [Deployment en Render](docs/deployment.md)
+- [Estrategia de storage y persistencia](docs/storage-strategy.md)
+
+## Correr localmente
 
 En PowerShell:
 
@@ -18,32 +43,41 @@ Luego abrir:
 http://127.0.0.1:3000/
 ```
 
-Si todos estan en la misma red Wi-Fi, tambien pueden probar el link de tu computadora:
+Si todos estan en la misma red Wi-Fi, tambien se puede probar con el IP local de la computadora:
 
 ```text
 http://192.168.0.10:3000/
 ```
 
-## Capacidades actuales
+## Produccion beta
 
-- Selector de usuario sin contraseña: David, Pri, Ana y César.
-- Cada usuario tiene su propio plan activo y check-ins.
-- Chat grupal compartido entre los 4 usuarios.
-- El coach solo responde en el chat grupal cuando alguien escribe `@coach`.
-- Estado compartido por servidor en `data/app_state.json`.
-- Retencion automatica de 30 dias para conversaciones, check-ins y archivos.
-- Evidencia y archivos guardados en `data/uploads/`.
-- Notificaciones del navegador para mensajes nuevos del grupo cuando la app esta abierta o en segundo plano.
-- Cargar y analizar planes de nutricion, entrenamiento o wellness.
-- Leer PDF directamente con OpenAI.
-- Extraer texto de DOCX, XLSX, CSV, TSV, TXT y MD desde el backend.
-- Crear planes por conversacion con IA, sin adjuntos.
-- Chat diario con el coach usando los planes activos y check-ins recientes.
-- Check-ins, accountability group y vista admin en modo beta local.
+URL actual:
 
-## Notas
+```text
+https://personal-wellness-coach.onrender.com
+```
 
-- No pongas `OPENAI_API_KEY` en el navegador ni en `app.js`.
-- El backend corre en `server.py` y mantiene la API key solo en ambiente de servidor.
-- Para compartir por WhatsApp fuera de tu misma red Wi-Fi se necesita un URL publico HTTPS, por ejemplo Vercel/Render/Railway o un tunel temporal como ngrok/Cloudflare Tunnel.
-- Push notifications reales con la app cerrada requieren HTTPS, service worker y Web Push/VAPID. La beta actual usa notificaciones del navegador mientras la app esta abierta o en segundo plano.
+Repositorio:
+
+```text
+https://github.com/cesarmo1994/personal_wellness_coach
+```
+
+Epic Jira:
+
+```text
+https://ckmecr.atlassian.net/browse/PPH-9
+```
+
+Historia de arquitectura:
+
+```text
+https://ckmecr.atlassian.net/browse/PPH-10
+```
+
+## Notas de seguridad
+
+- No poner `OPENAI_API_KEY` en el navegador, `app.js`, GitHub ni capturas.
+- Las API keys deben vivir solo como variables de ambiente del servidor.
+- Para produccion escalable, el historial, archivos y tokens externos deben moverse a Supabase.
+- La integracion con Strava requiere OAuth por atleta y consentimiento explicito.
