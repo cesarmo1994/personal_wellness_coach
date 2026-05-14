@@ -23,6 +23,7 @@ Capacidades actuales:
 ## Documentacion
 
 - [Arquitectura productiva](docs/architecture.md)
+- [Esquema de base de datos](docs/database-schema.md)
 - [Variables de ambiente](docs/environment.md)
 - [Deployment en Render](docs/deployment.md)
 - [Estrategia de storage y persistencia](docs/storage-strategy.md)

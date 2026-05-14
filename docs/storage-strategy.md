@@ -49,6 +49,18 @@ Guardar:
 - Metadata de archivos.
 - Conexiones externas como Strava.
 
+El esquema inicial esta documentado en:
+
+```text
+docs/database-schema.md
+```
+
+La migracion versionada vive en:
+
+```text
+supabase/migrations/202605130001_initial_schema.sql
+```
+
 ### Supabase Storage
 
 Guardar:
