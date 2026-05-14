@@ -1,4 +1,5 @@
 import json
+import hashlib
 import mimetypes
 import os
 import posixpath
@@ -29,6 +30,9 @@ DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
 MAX_TEXT_CHARS = 45000
 RETENTION_DAYS = 30
 SIGNED_URL_TTL_SECONDS = 60 * 60
+CHAT_RETENTION_DAYS = int(os.getenv("CHAT_RETENTION_DAYS", "30"))
+DEFAULT_GROUP_NAME = "Los Pichudos"
+DEFAULT_GROUP_SLUG = "los-pichudos"
 
 
 PLAN_LABELS = {
@@ -323,6 +327,15 @@ def supabase_insert(table, payload):
     return result
 
 
+def supabase_insert_ignore(table, payload):
+    try:
+        return supabase_insert(table, payload)
+    except RuntimeError as exc:
+        if "duplicate key value" in str(exc) or "23505" in str(exc):
+            return None
+        raise
+
+
 def supabase_select_one(table, filters, select="id"):
     query = {"select": select, "limit": "1"}
     query.update(filters)
@@ -331,6 +344,19 @@ def supabase_select_one(table, filters, select="id"):
     if isinstance(result, list) and result:
         return result[0]
     return None
+
+
+def supabase_select_many(table, filters=None, select="*", order=None, limit=None):
+    query = {"select": select}
+    if filters:
+        query.update(filters)
+    if order:
+        query["order"] = order
+    if limit:
+        query["limit"] = str(limit)
+    path = f"/rest/v1/{table}?{urllib.parse.urlencode(query)}"
+    result = supabase_request("GET", path)
+    return result if isinstance(result, list) else []
 
 
 def profile_handle(display_name):
@@ -356,6 +382,221 @@ def get_or_create_profile(display_name):
             "metadata": {"source": "beta-storage-upload"},
         },
     )
+
+
+def get_or_create_team(name=DEFAULT_GROUP_NAME, slug=DEFAULT_GROUP_SLUG):
+    existing = supabase_select_one("teams", {"slug": f"eq.{slug}"}, "id,name,slug")
+    if existing:
+        return existing
+    return supabase_insert(
+        "teams",
+        {
+            "name": name,
+            "slug": slug,
+            "kind": "accountability_group",
+            "weekly_goal": "Cumplir el objetivo de la semana con check-ins diarios.",
+            "metadata": {"source": "beta-chat-sync"},
+        },
+    )
+
+
+def ensure_team_member(team_id, profile_id, role="athlete"):
+    existing = supabase_select_one(
+        "team_members",
+        {"team_id": f"eq.{team_id}", "profile_id": f"eq.{profile_id}"},
+        "id",
+    )
+    if existing:
+        return existing
+    return supabase_insert_ignore(
+        "team_members",
+        {"team_id": team_id, "profile_id": profile_id, "role": role},
+    )
+
+
+def get_or_create_conversation(kind, profile_id=None, team_id=None, title=None):
+    if kind == "personal":
+        existing = supabase_select_one("conversations", {"kind": "eq.personal", "profile_id": f"eq.{profile_id}"}, "id")
+        if existing:
+            return existing
+        return supabase_insert(
+            "conversations",
+            {"kind": "personal", "profile_id": profile_id, "title": title or "Coach personal"},
+        )
+
+    existing = supabase_select_one("conversations", {"kind": "eq.group", "team_id": f"eq.{team_id}"}, "id")
+    if existing:
+        return existing
+    return supabase_insert(
+        "conversations",
+        {"kind": "group", "team_id": team_id, "title": title or DEFAULT_GROUP_NAME},
+    )
+
+
+def sender_type_from_role(role):
+    if role == "coach":
+        return "coach_ai"
+    if role == "system":
+        return "system"
+    return "user"
+
+
+def stable_message_id(scope, message):
+    raw = "|".join(
+        [
+            scope,
+            str(message.get("role", "")),
+            str(message.get("sender", "")),
+            str(message.get("at", "")),
+            str(message.get("text", "")),
+        ]
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def iso_timestamp(value):
+    if not value:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    if isinstance(value, str):
+        return value
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def message_to_client(row, personal_user=None):
+    sender_type = row.get("sender_type")
+    if sender_type == "coach_ai":
+        role = "coach"
+    elif sender_type == "system":
+        role = "system"
+    else:
+        role = "user"
+    message = {
+        "role": role,
+        "text": row.get("body", ""),
+        "at": row.get("created_at"),
+    }
+    sender_name = row.get("profiles", {}).get("display_name") if isinstance(row.get("profiles"), dict) else None
+    if personal_user and role == "user":
+        sender_name = personal_user
+    if sender_name:
+        message["sender"] = sender_name
+    return message
+
+
+def sync_chats_to_supabase(state):
+    if not get_supabase_config() or not isinstance(state, dict):
+        return
+
+    users = state.get("users", {})
+    profiles = {}
+    for user_name in users.keys():
+        profile = get_or_create_profile(user_name)
+        profiles[user_name] = profile
+
+    team = get_or_create_team()
+    for profile in profiles.values():
+        ensure_team_member(team["id"], profile["id"])
+
+    for user_name, user_state in users.items():
+        profile = profiles.get(user_name)
+        if not profile:
+            continue
+        conversation = get_or_create_conversation("personal", profile_id=profile["id"], title=f"Coach personal - {user_name}")
+        for message in user_state.get("messages", []):
+            body = (message.get("text") or "").strip()
+            if not body:
+                continue
+            client_id = stable_message_id(f"personal:{user_name}", message)
+            if supabase_select_one("messages", {"client_message_id": f"eq.{client_id}"}, "id"):
+                continue
+            role = message.get("role", "user")
+            supabase_insert_ignore(
+                "messages",
+                {
+                    "conversation_id": conversation["id"],
+                    "profile_id": profile["id"] if role == "user" else None,
+                    "sender_type": sender_type_from_role(role),
+                    "body": body,
+                    "mentions_coach": "@coach" in body.lower(),
+                    "client_message_id": client_id,
+                    "created_at": iso_timestamp(message.get("at")),
+                    "ai_context": {"scope": "personal", "user": user_name},
+                },
+            )
+
+    group_conversation = get_or_create_conversation("group", team_id=team["id"], title=DEFAULT_GROUP_NAME)
+    for message in state.get("groupMessages", []):
+        body = (message.get("text") or "").strip()
+        if not body:
+            continue
+        sender = message.get("sender", "")
+        profile = profiles.get(sender)
+        client_id = stable_message_id("group:los-pichudos", message)
+        if supabase_select_one("messages", {"client_message_id": f"eq.{client_id}"}, "id"):
+            continue
+        role = message.get("role", "user")
+        supabase_insert_ignore(
+            "messages",
+            {
+                "conversation_id": group_conversation["id"],
+                "profile_id": profile["id"] if profile and role == "user" else None,
+                "team_id": team["id"],
+                "sender_type": sender_type_from_role(role),
+                "body": body,
+                "mentions_coach": "@coach" in body.lower(),
+                "client_message_id": client_id,
+                "created_at": iso_timestamp(message.get("at")),
+                "ai_context": {"scope": "group", "sender": sender},
+            },
+        )
+
+
+def load_chats_from_supabase(state):
+    if not get_supabase_config() or not isinstance(state, dict):
+        return state
+
+    users = state.get("users", {})
+    for user_name in list(users.keys()):
+        profile = supabase_select_one("profiles", {"display_name": f"eq.{user_name}"}, "id,display_name")
+        if not profile:
+            continue
+        conversation = supabase_select_one("conversations", {"kind": "eq.personal", "profile_id": f"eq.{profile['id']}"}, "id")
+        if not conversation:
+            continue
+        rows = supabase_select_many(
+            "messages",
+            {"conversation_id": f"eq.{conversation['id']}", "created_at": f"gte.{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - CHAT_RETENTION_DAYS * 24 * 60 * 60))}"},
+            "id,sender_type,body,created_at,mentions_coach,profiles(display_name)",
+            "created_at.asc",
+            500,
+        )
+        if rows:
+            users[user_name]["messages"] = [message_to_client(row, personal_user=user_name) for row in rows]
+
+    team = supabase_select_one("teams", {"slug": f"eq.{DEFAULT_GROUP_SLUG}"}, "id")
+    if team:
+        conversation = supabase_select_one("conversations", {"kind": "eq.group", "team_id": f"eq.{team['id']}"}, "id")
+        if conversation:
+            rows = supabase_select_many(
+                "messages",
+                {"conversation_id": f"eq.{conversation['id']}", "created_at": f"gte.{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - CHAT_RETENTION_DAYS * 24 * 60 * 60))}"},
+                "id,sender_type,body,created_at,mentions_coach,profiles(display_name)",
+                "created_at.asc",
+                800,
+            )
+            if rows:
+                state["groupMessages"] = [
+                    {
+                        **message_to_client(row),
+                        "sender": (
+                            row.get("profiles", {}).get("display_name")
+                            if isinstance(row.get("profiles"), dict) and row.get("profiles", {}).get("display_name")
+                            else ("Coach" if row.get("sender_type") == "coach_ai" else "Sistema")
+                        ),
+                    }
+                    for row in rows
+                ]
+    return prune_state(state)
 
 
 def file_kind_for(filename, content_type=""):
@@ -660,7 +901,12 @@ class AppHandler(SimpleHTTPRequestHandler):
             json_response(self, 200, {"ok": True})
             return
         if public_path == "/api/app-state":
-            json_response(self, 200, {"state": read_app_state()})
+            state = read_app_state()
+            try:
+                state = load_chats_from_supabase(state)
+            except Exception:
+                pass
+            json_response(self, 200, {"state": state})
             return
         if public_path.startswith("/uploads/"):
             super().do_GET()
@@ -806,7 +1052,12 @@ Respondé como coach IA motivador suave. Si hace falta, recomendá un ajuste peq
             json_response(self, 400, {"error": "Estado inválido."})
             return
         saved = write_app_state(state)
-        json_response(self, 200, {"ok": True, "serverSavedAt": saved.get("serverSavedAt")})
+        sync_warning = ""
+        try:
+            sync_chats_to_supabase(saved)
+        except Exception as exc:
+            sync_warning = str(exc)
+        json_response(self, 200, {"ok": True, "serverSavedAt": saved.get("serverSavedAt"), "syncWarning": sync_warning})
 
     def handle_upload_evidence(self):
         fields, files = parse_multipart(self.headers, read_request_body(self))

@@ -25,6 +25,7 @@ Capacidades actuales:
 - [Arquitectura productiva](docs/architecture.md)
 - [Esquema de base de datos](docs/database-schema.md)
 - [Buckets privados de Supabase Storage](docs/storage-buckets.md)
+- [Persistencia de chats](docs/chat-persistence.md)
 - [Variables de ambiente](docs/environment.md)
 - [Deployment en Render](docs/deployment.md)
 - [Estrategia de storage y persistencia](docs/storage-strategy.md)

@@ -16,6 +16,12 @@ Permisos backend para el service role:
 supabase/migrations/202605130003_backend_service_role_grants.sql
 ```
 
+Soporte de deduplicacion para mensajes:
+
+```text
+supabase/migrations/202605140004_chat_message_dedupe.sql
+```
+
 ## Proyecto Supabase
 
 Proyecto:
@@ -178,6 +184,7 @@ Soporta:
 - Mensajes del sistema.
 - `mentions_coach` para saber si el grupo invoco al coach con `@coach`.
 - Adjuntos como metadata JSON.
+- `client_message_id` para evitar duplicados durante autosave.
 
 ### `ai_insights`
 
