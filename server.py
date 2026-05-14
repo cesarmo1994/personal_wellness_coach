@@ -28,6 +28,7 @@ OPENAI_FILES_URL = "https://api.openai.com/v1/files"
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
 MAX_TEXT_CHARS = 45000
 RETENTION_DAYS = 30
+SIGNED_URL_TTL_SECONDS = 60 * 60
 
 
 PLAN_LABELS = {
@@ -267,6 +268,242 @@ def get_openai_api_key():
     return api_key
 
 
+def get_supabase_config():
+    url = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    service_key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip().strip('"').strip("'")
+    if url.endswith("/rest/v1"):
+        url = url[: -len("/rest/v1")]
+    if not url or not service_key:
+        return None
+    if "\n" in service_key or "\r" in service_key or "$env:" in service_key:
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY estÃ¡ mal configurada.")
+    return {"url": url, "service_key": service_key}
+
+
+def supabase_request(method, path, payload=None, extra_headers=None, timeout=60):
+    config = get_supabase_config()
+    if not config:
+        raise RuntimeError("Faltan SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY.")
+
+    body = None
+    headers = {
+        "apikey": config["service_key"],
+        "Authorization": f"Bearer {config['service_key']}",
+    }
+    if payload is not None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    if extra_headers:
+        headers.update(extra_headers)
+
+    request = urllib.request.Request(
+        f"{config['url']}{path}",
+        data=body,
+        headers=headers,
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else None
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Supabase respondiÃ³ {exc.code}: {details}") from exc
+
+
+def supabase_insert(table, payload):
+    result = supabase_request(
+        "POST",
+        f"/rest/v1/{table}",
+        payload,
+        {"Prefer": "return=representation"},
+    )
+    if isinstance(result, list) and result:
+        return result[0]
+    return result
+
+
+def supabase_select_one(table, filters, select="id"):
+    query = {"select": select, "limit": "1"}
+    query.update(filters)
+    path = f"/rest/v1/{table}?{urllib.parse.urlencode(query)}"
+    result = supabase_request("GET", path)
+    if isinstance(result, list) and result:
+        return result[0]
+    return None
+
+
+def profile_handle(display_name):
+    base = (display_name or "usuario").strip().lower()
+    replacements = {"Ã¡": "a", "Ã©": "e", "Ã­": "i", "Ã³": "o", "Ãº": "u", "Ã±": "n", "Ã¼": "u"}
+    for source, target in replacements.items():
+        base = base.replace(source, target)
+    handle = re.sub(r"[^a-z0-9]+", "-", base).strip("-")
+    return handle or f"user-{uuid.uuid4().hex[:8]}"
+
+
+def get_or_create_profile(display_name):
+    name = (display_name or "Usuario").strip() or "Usuario"
+    existing = supabase_select_one("profiles", {"display_name": f"eq.{name}"}, "id,display_name")
+    if existing:
+        return existing
+    return supabase_insert(
+        "profiles",
+        {
+            "display_name": name,
+            "handle": profile_handle(name),
+            "is_beta_user": True,
+            "metadata": {"source": "beta-storage-upload"},
+        },
+    )
+
+
+def file_kind_for(filename, content_type=""):
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".pdf" or content_type == "application/pdf":
+        return "pdf"
+    if suffix == ".docx":
+        return "docx"
+    if suffix == ".xlsx":
+        return "xlsx"
+    if suffix == ".csv":
+        return "csv"
+    if suffix in {".txt", ".md", ".tsv"}:
+        return "txt"
+    if content_type.startswith("image/"):
+        return "image"
+    if content_type.startswith("audio/"):
+        return "audio"
+    return "other"
+
+
+def storage_object_path(bucket, profile_id, filename, plan_id=None, checkin_id=None):
+    safe_name = safe_upload_name(filename)
+    if bucket == "plan-files":
+        return f"profiles/{profile_id}/plans/{plan_id or 'unassigned'}/{safe_name}"
+    if bucket == "checkin-evidence":
+        return f"profiles/{profile_id}/checkins/{checkin_id or 'unassigned'}/{safe_name}"
+    return f"profiles/{profile_id}/avatar/{safe_name}"
+
+
+def upload_supabase_storage(bucket, object_path, data, content_type):
+    config = get_supabase_config()
+    if not config:
+        return None
+    encoded_path = "/".join(urllib.parse.quote(part, safe="") for part in object_path.split("/"))
+    request = urllib.request.Request(
+        f"{config['url']}/storage/v1/object/{bucket}/{encoded_path}",
+        data=data,
+        headers={
+            "apikey": config["service_key"],
+            "Authorization": f"Bearer {config['service_key']}",
+            "Content-Type": content_type or "application/octet-stream",
+            "x-upsert": "false",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {"path": object_path}
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Supabase Storage respondiÃ³ {exc.code}: {details}") from exc
+
+
+def create_supabase_signed_url(bucket, object_path, expires_in=SIGNED_URL_TTL_SECONDS):
+    encoded_path = "/".join(urllib.parse.quote(part, safe="") for part in object_path.split("/"))
+    result = supabase_request(
+        "POST",
+        f"/storage/v1/object/sign/{bucket}/{encoded_path}",
+        {"expiresIn": expires_in},
+    )
+    if isinstance(result, dict):
+        signed = result.get("signedURL") or result.get("signedUrl")
+        if signed and signed.startswith("http"):
+            return signed
+        if signed:
+            config = get_supabase_config()
+            return f"{config['url']}/storage/v1{signed}"
+    return ""
+
+
+def create_plan_storage_record(user_name, plan_type, filename, data, content_type, user_notes, summary):
+    if not get_supabase_config():
+        return None
+    profile = get_or_create_profile(user_name)
+    plan = supabase_insert(
+        "plans",
+        {
+            "profile_id": profile["id"],
+            "plan_type": plan_type,
+            "status": "draft",
+            "source": "upload",
+            "title": filename,
+            "user_notes": user_notes,
+            "summary": summary,
+        },
+    )
+    object_path = storage_object_path("plan-files", profile["id"], filename, plan.get("id"))
+    upload_supabase_storage("plan-files", object_path, data, content_type)
+    signed_url = create_supabase_signed_url("plan-files", object_path)
+    plan_file = supabase_insert(
+        "plan_files",
+        {
+            "plan_id": plan["id"],
+            "profile_id": profile["id"],
+            "bucket": "plan-files",
+            "storage_path": object_path,
+            "original_filename": filename,
+            "content_type": content_type,
+            "file_kind": file_kind_for(filename, content_type),
+            "size_bytes": len(data),
+            "metadata": {"signed_url_ttl_seconds": SIGNED_URL_TTL_SECONDS},
+        },
+    )
+    return {"profile": profile, "plan": plan, "file": plan_file, "signedUrl": signed_url, "storagePath": object_path}
+
+
+def create_checkin_evidence_storage_record(user_name, filename, data, content_type):
+    if not get_supabase_config():
+        return None
+    profile = get_or_create_profile(user_name)
+    today = time.strftime("%Y-%m-%d")
+    checkin = supabase_select_one(
+        "checkins",
+        {"profile_id": f"eq.{profile['id']}", "checkin_date": f"eq.{today}"},
+        "id,profile_id,checkin_date",
+    )
+    if not checkin:
+        checkin = supabase_insert(
+            "checkins",
+            {
+                "profile_id": profile["id"],
+                "checkin_date": today,
+                "notes": "Evidencia cargada desde beta.",
+                "metrics": {"source": "upload-evidence-endpoint"},
+            },
+        )
+    object_path = storage_object_path("checkin-evidence", profile["id"], filename, checkin.get("id"))
+    upload_supabase_storage("checkin-evidence", object_path, data, content_type)
+    signed_url = create_supabase_signed_url("checkin-evidence", object_path)
+    checkin_file = supabase_insert(
+        "checkin_files",
+        {
+            "checkin_id": checkin["id"],
+            "profile_id": profile["id"],
+            "bucket": "checkin-evidence",
+            "storage_path": object_path,
+            "original_filename": filename,
+            "content_type": content_type,
+            "file_kind": file_kind_for(filename, content_type),
+            "size_bytes": len(data),
+            "metadata": {"signed_url_ttl_seconds": SIGNED_URL_TTL_SECONDS},
+        },
+    )
+    return {"profile": profile, "checkin": checkin, "file": checkin_file, "signedUrl": signed_url, "storagePath": object_path}
+
+
 def multipart_body(fields, files):
     boundary = f"----pichudos-{uuid.uuid4().hex}"
     chunks = []
@@ -454,6 +691,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         fields, files = parse_multipart(self.headers, read_request_body(self))
         plan_type = fields.get("planType", "wellness")
         user_notes = fields.get("notes", "")
+        user_name = fields.get("user", "Usuario")
         file_data = files.get("file")
         if not file_data:
             json_response(self, 400, {"error": "No se recibió archivo."})
@@ -487,6 +725,17 @@ class AppHandler(SimpleHTTPRequestHandler):
             ]
 
         answer, response_id = call_openai([{"role": "user", "content": content}], max_output_tokens=1500)
+        storage_record = create_plan_storage_record(
+            user_name,
+            plan_type,
+            filename,
+            data,
+            file_data["content_type"],
+            user_notes,
+            answer,
+        )
+        if storage_record and storage_record.get("signedUrl"):
+            file_url = storage_record["signedUrl"]
         json_response(
             self,
             200,
@@ -497,6 +746,13 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "responseId": response_id,
                 "extraction": "text" if extracted else "file",
                 "fileUrl": file_url,
+                "storage": {
+                    "provider": "supabase" if storage_record else "local",
+                    "bucket": storage_record["file"]["bucket"] if storage_record else "",
+                    "path": storage_record["storagePath"] if storage_record else "",
+                    "planId": storage_record["plan"]["id"] if storage_record else "",
+                    "fileId": storage_record["file"]["id"] if storage_record else "",
+                },
                 "notes": user_notes,
             },
         )
@@ -562,16 +818,30 @@ Respondé como coach IA motivador suave. Si hace falta, recomendá un ajuste peq
         filename = safe_upload_name(file_data["filename"])
         target = UPLOAD_DIR / filename
         target.write_bytes(file_data["bytes"])
+        storage_record = create_checkin_evidence_storage_record(
+            fields.get("user", "Usuario"),
+            file_data["filename"],
+            file_data["bytes"],
+            file_data["content_type"],
+        )
+        file_url = storage_record["signedUrl"] if storage_record and storage_record.get("signedUrl") else f"/uploads/{filename}"
         json_response(
             self,
             200,
             {
-                "url": f"/uploads/{filename}",
+                "url": file_url,
                 "name": file_data["filename"],
                 "storedName": filename,
                 "contentType": file_data["content_type"],
                 "size": len(file_data["bytes"]),
                 "user": fields.get("user", ""),
+                "storage": {
+                    "provider": "supabase" if storage_record else "local",
+                    "bucket": storage_record["file"]["bucket"] if storage_record else "",
+                    "path": storage_record["storagePath"] if storage_record else "",
+                    "checkinId": storage_record["checkin"]["id"] if storage_record else "",
+                    "fileId": storage_record["file"]["id"] if storage_record else "",
+                },
             },
         )
 

@@ -195,6 +195,7 @@ async function postJson(url, payload) {
 async function analyzePlanFile(planType, file) {
   const formData = new FormData();
   formData.append("planType", planType);
+  formData.append("user", state.activeUser);
   formData.append("file", file);
   formData.append("notes", document.querySelector("#plan-upload-notes")?.value.trim() || "");
   const response = await fetch("/api/analyze-plan", { method: "POST", body: formData });

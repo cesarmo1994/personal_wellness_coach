@@ -101,6 +101,18 @@ No usar para:
 
 ## Buckets recomendados
 
+La configuracion versionada de buckets vive en:
+
+```text
+supabase/migrations/202605130002_storage_buckets.sql
+```
+
+La guia operativa vive en:
+
+```text
+docs/storage-buckets.md
+```
+
 ### `plan-files`
 
 Contenido:
