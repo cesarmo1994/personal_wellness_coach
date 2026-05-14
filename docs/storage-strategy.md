@@ -61,6 +61,18 @@ La migracion versionada vive en:
 supabase/migrations/202605130001_initial_schema.sql
 ```
 
+Proyecto Supabase actual:
+
+```text
+https://uuwdhccchzeicdfsmpjz.supabase.co
+```
+
+Data API base:
+
+```text
+https://uuwdhccchzeicdfsmpjz.supabase.co/rest/v1/
+```
+
 ### Supabase Storage
 
 Guardar:

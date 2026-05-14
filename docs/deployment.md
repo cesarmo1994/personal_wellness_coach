@@ -79,6 +79,23 @@ OPENAI_MODEL=gpt-5.2
 DATA_DIR=/var/data
 ```
 
+## Variables Supabase en Render
+
+Cuando el backend empiece a leer/escribir en Supabase, agregar estas variables en Render:
+
+```text
+SUPABASE_URL=https://uuwdhccchzeicdfsmpjz.supabase.co
+SUPABASE_ANON_KEY=sb_publishable_...
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
+```
+
+Reglas:
+
+- `SUPABASE_URL` va sin `/rest/v1/`.
+- `SUPABASE_ANON_KEY` corresponde a la publishable key.
+- `SUPABASE_SERVICE_ROLE_KEY` corresponde a la secret key y solo debe vivir en backend.
+- No guardar keys reales en GitHub.
+
 ## Validacion post-deploy
 
 Abrir:

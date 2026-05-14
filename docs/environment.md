@@ -78,30 +78,53 @@ Local por defecto:
 
 Render lo inyecta automaticamente.
 
-## Variables Supabase futuras
+## Variables Supabase
 
 ### `SUPABASE_URL`
 
 URL del proyecto Supabase.
 
-Ejemplo:
+Valor del proyecto actual:
 
 ```text
-https://xxxx.supabase.co
+https://uuwdhccchzeicdfsmpjz.supabase.co
+```
+
+Data API base URL:
+
+```text
+https://uuwdhccchzeicdfsmpjz.supabase.co/rest/v1/
+```
+
+Nota:
+
+- En Render se debe configurar `SUPABASE_URL` con la URL del proyecto, sin `/rest/v1/`.
+- La URL con `/rest/v1/` es la base del Data API generado por Supabase.
+
+Valor para Render:
+
+```text
+SUPABASE_URL=https://uuwdhccchzeicdfsmpjz.supabase.co
 ```
 
 ### `SUPABASE_ANON_KEY`
 
-Key publica limitada por RLS.
+Key publica limitada por RLS. En el dashboard nuevo de Supabase puede aparecer como publishable key.
 
 Uso futuro:
 
 - Puede ser usada por frontend cuando exista autenticacion real.
 - Debe combinarse con Row Level Security.
 
+Formato esperado:
+
+```text
+SUPABASE_ANON_KEY=sb_publishable_...
+```
+
 ### `SUPABASE_SERVICE_ROLE_KEY`
 
-Key privada de servidor.
+Key privada de servidor. En el dashboard nuevo de Supabase puede aparecer como secret key.
 
 Uso:
 
@@ -114,6 +137,12 @@ Reglas:
 - Solo backend.
 - Nunca frontend.
 - Nunca GitHub.
+
+Formato esperado:
+
+```text
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
+```
 
 ## Variables Strava futuras
 
@@ -176,6 +205,13 @@ Variables requeridas para Supabase:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
+
+Valores no secretos del proyecto:
+
+```text
+SUPABASE_URL=https://uuwdhccchzeicdfsmpjz.supabase.co
+SUPABASE_DATA_API_URL=https://uuwdhccchzeicdfsmpjz.supabase.co/rest/v1/
+```
 
 Variables requeridas para Strava:
 

@@ -4,3 +4,7 @@ __pycache__/
 data/
 server.err.log
 server.out.log
+*contrase*.txt
+*password*.txt
+*secret*.txt
+*secrets*.txt

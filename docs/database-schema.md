@@ -10,6 +10,38 @@ La migracion versionada vive en:
 supabase/migrations/202605130001_initial_schema.sql
 ```
 
+## Proyecto Supabase
+
+Proyecto:
+
+```text
+personal-wellness-coach
+```
+
+Organization:
+
+```text
+CKMECR
+```
+
+Project URL:
+
+```text
+https://uuwdhccchzeicdfsmpjz.supabase.co
+```
+
+Data API base URL:
+
+```text
+https://uuwdhccchzeicdfsmpjz.supabase.co/rest/v1/
+```
+
+Estado:
+
+```text
+Migracion inicial ejecutada correctamente en Supabase.
+```
+
 ## Alcance
 
 El modelo soporta:
@@ -228,6 +260,13 @@ La migracion incluye trigger `set_updated_at()` para actualizar automaticamente 
 
 `PPH-11` define el esquema base.
 
+El proyecto fue creado con:
+
+- Data API habilitada.
+- Exposicion automatica de tablas deshabilitada.
+- Automatic RLS habilitado.
+- Postgres default.
+
 Las politicas RLS completas se implementaran en:
 
 ```text
@@ -256,9 +295,22 @@ PPH-13 - Migrar storage de archivos a buckets privados
 
 ## Siguientes pasos
 
-1. Crear proyecto Supabase.
-2. Ejecutar la migracion SQL.
-3. Validar que todas las tablas, llaves e indices existan.
-4. Crear datos beta iniciales en una migracion o script separado.
-5. Conectar backend Python a Supabase.
-6. Implementar RLS antes de abrir a usuarios externos.
+1. Agregar captura del Table Editor como evidencia visual en Jira.
+2. Guardar `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` en Render.
+3. Crear datos beta iniciales en una migracion o script separado.
+4. Conectar backend Python a Supabase.
+5. Implementar RLS antes de abrir a usuarios externos.
+
+## Pasos ejecutados para crear Supabase
+
+1. Crear cuenta en Supabase.
+2. Crear organization `CKMECR`.
+3. Crear proyecto `personal-wellness-coach`.
+4. Seleccionar Postgres default.
+5. Activar Data API.
+6. Desactivar exposicion automatica de nuevas tablas.
+7. Activar automatic RLS.
+8. Abrir SQL Editor.
+9. Copiar el contenido de `supabase/migrations/202605130001_initial_schema.sql`.
+10. Ejecutar el SQL completo.
+11. Validar en Table Editor que las tablas fueron creadas.
