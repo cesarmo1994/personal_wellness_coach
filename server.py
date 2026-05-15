@@ -286,6 +286,63 @@ def get_supabase_config():
     return {"url": url, "service_key": service_key}
 
 
+def get_supabase_public_config():
+    url = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    anon_key = (os.getenv("SUPABASE_ANON_KEY") or "").strip().strip('"').strip("'")
+    if url.endswith("/rest/v1"):
+        url = url[: -len("/rest/v1")]
+    if not url or not anon_key:
+        return None
+    if "\n" in anon_key or "\r" in anon_key or "$env:" in anon_key:
+        raise RuntimeError("SUPABASE_ANON_KEY estÃ¡ mal configurada.")
+    return {"url": url, "anon_key": anon_key}
+
+
+def admin_emails():
+    raw = os.getenv("ADMIN_EMAILS", "cesar@ckmecr.com")
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
+
+
+def infer_beta_display_name(email, full_name):
+    source = f"{full_name or ''} {email or ''}".lower()
+    if "david" in source:
+        return "David"
+    if "ana" in source:
+        return "Ana"
+    if "pri" in source or "prisc" in source:
+        return "Pri"
+    if "cesar" in source or "cÃ©sar" in source:
+        return "CÃ©sar"
+    return (full_name or email or "Usuario").split()[0]
+
+
+def auth_user_from_access_token(access_token):
+    public_config = get_supabase_public_config()
+    if not public_config:
+        raise RuntimeError("Faltan SUPABASE_URL y SUPABASE_ANON_KEY para auth.")
+    request = urllib.request.Request(
+        f"{public_config['url']}/auth/v1/user",
+        headers={
+            "apikey": public_config["anon_key"],
+            "Authorization": f"Bearer {access_token}",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Supabase Auth respondiÃ³ {exc.code}: {details}") from exc
+
+
+def access_token_from_headers(headers):
+    auth_header = (headers.get("Authorization") or "").strip()
+    if not auth_header.lower().startswith("bearer "):
+        return ""
+    return auth_header[7:].strip()
+
+
 def supabase_request(method, path, payload=None, extra_headers=None, timeout=60):
     config = get_supabase_config()
     if not config:
@@ -381,20 +438,62 @@ def profile_handle(display_name):
     return handle or f"user-{uuid.uuid4().hex[:8]}"
 
 
-def get_or_create_profile(display_name):
+def get_or_create_profile(display_name, email=None, auth_user_id=None):
     name = (display_name or "Usuario").strip() or "Usuario"
-    existing = supabase_select_one("profiles", {"display_name": f"eq.{name}"}, "id,display_name")
+    if auth_user_id:
+        existing = supabase_select_one("profiles", {"auth_user_id": f"eq.{auth_user_id}"}, "id,display_name,email,auth_user_id,default_role")
+        if existing:
+            return existing
+    if email:
+        existing = supabase_select_one("profiles", {"email": f"eq.{email.lower()}"}, "id,display_name,email,auth_user_id,default_role")
+        if existing:
+            if auth_user_id and not existing.get("auth_user_id"):
+                supabase_update("profiles", {"id": f"eq.{existing['id']}"}, {"auth_user_id": auth_user_id})
+            return existing
+    existing = supabase_select_one("profiles", {"display_name": f"eq.{name}"}, "id,display_name,email,auth_user_id,default_role")
     if existing:
+        updates = {}
+        if email and not existing.get("email"):
+            updates["email"] = email.lower()
+        if auth_user_id and not existing.get("auth_user_id"):
+            updates["auth_user_id"] = auth_user_id
+        if updates:
+            supabase_update("profiles", {"id": f"eq.{existing['id']}"}, updates)
         return existing
+    role = "owner" if email and email.lower() in admin_emails() else "athlete"
     return supabase_insert(
         "profiles",
         {
+            "auth_user_id": auth_user_id,
             "display_name": name,
             "handle": profile_handle(name),
+            "email": email.lower() if email else None,
+            "default_role": role,
             "is_beta_user": True,
-            "metadata": {"source": "beta-storage-upload"},
+            "metadata": {"source": "auth" if auth_user_id else "beta-storage-upload"},
         },
     )
+
+
+def ensure_authenticated_profile(access_token):
+    auth_user = auth_user_from_access_token(access_token)
+    email = (auth_user.get("email") or "").lower()
+    metadata = auth_user.get("user_metadata") or {}
+    full_name = metadata.get("full_name") or metadata.get("name") or email
+    display_name = infer_beta_display_name(email, full_name)
+    profile = get_or_create_profile(display_name, email=email, auth_user_id=auth_user.get("id"))
+    team = get_or_create_team()
+    role = "owner" if email in admin_emails() else profile.get("default_role", "athlete") or "athlete"
+    ensure_team_member(team["id"], profile["id"], "team_admin" if role == "owner" else role)
+    return {
+        "profile": {
+            "id": profile["id"],
+            "displayName": profile["display_name"],
+            "email": email,
+            "role": role,
+        },
+        "team": team,
+    }
 
 
 def get_or_create_team(name=DEFAULT_GROUP_NAME, slug=DEFAULT_GROUP_SLUG):
@@ -1002,6 +1101,18 @@ class AppHandler(SimpleHTTPRequestHandler):
         if public_path == "/healthz":
             json_response(self, 200, {"ok": True})
             return
+        if public_path == "/api/config":
+            public_config = get_supabase_public_config()
+            json_response(
+                self,
+                200,
+                {
+                    "supabaseUrl": public_config["url"] if public_config else "",
+                    "supabaseAnonKey": public_config["anon_key"] if public_config else "",
+                    "authProvider": "google" if public_config else "beta",
+                },
+            )
+            return
         if public_path == "/api/app-state":
             state = read_app_state()
             try:
@@ -1030,16 +1141,30 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self.handle_save_state()
             elif self.path == "/api/upload-evidence":
                 self.handle_upload_evidence()
+            elif self.path == "/api/auth/session":
+                self.handle_auth_session()
             else:
                 json_response(self, 404, {"error": "Ruta no encontrada."})
         except Exception as exc:
             json_response(self, 500, {"error": str(exc)})
 
+    def authenticated_session(self):
+        access_token = access_token_from_headers(self.headers)
+        if not access_token:
+            return None
+        return ensure_authenticated_profile(access_token)
+
+    def request_user_name(self, fallback):
+        session = self.authenticated_session()
+        if session:
+            return session["profile"]["displayName"]
+        return fallback or "Usuario"
+
     def handle_analyze_plan(self):
         fields, files = parse_multipart(self.headers, read_request_body(self))
         plan_type = fields.get("planType", "wellness")
         user_notes = fields.get("notes", "")
-        user_name = fields.get("user", "Usuario")
+        user_name = self.request_user_name(fields.get("user", "Usuario"))
         file_data = files.get("file")
         if not file_data:
             json_response(self, 400, {"error": "No se recibió archivo."})
@@ -1120,7 +1245,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         plan_type = payload.get("planType", "wellness")
         notes = payload.get("notes", "")
         messages = payload.get("messages", [])
-        user_name = payload.get("user", "Usuario")
+        user_name = self.request_user_name(payload.get("user", "Usuario"))
         prompt = build_creation_prompt(plan_type, notes, messages)
         answer, response_id = call_openai(
             [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
@@ -1186,6 +1311,15 @@ Respondé como coach IA motivador suave. Si hace falta, recomendá un ajuste peq
             sync_warning = str(exc)
         json_response(self, 200, {"ok": True, "serverSavedAt": saved.get("serverSavedAt"), "syncWarning": sync_warning})
 
+    def handle_auth_session(self):
+        payload = json.loads(read_request_body(self).decode("utf-8"))
+        access_token = payload.get("accessToken", "")
+        if not access_token:
+            json_response(self, 401, {"error": "Falta accessToken."})
+            return
+        session = ensure_authenticated_profile(access_token)
+        json_response(self, 200, session)
+
     def handle_upload_evidence(self):
         fields, files = parse_multipart(self.headers, read_request_body(self))
         file_data = files.get("file")
@@ -1196,8 +1330,9 @@ Respondé como coach IA motivador suave. Si hace falta, recomendá un ajuste peq
         filename = safe_upload_name(file_data["filename"])
         target = UPLOAD_DIR / filename
         target.write_bytes(file_data["bytes"])
+        user_name = self.request_user_name(fields.get("user", "Usuario"))
         storage_record = create_checkin_evidence_storage_record(
-            fields.get("user", "Usuario"),
+            user_name,
             file_data["filename"],
             file_data["bytes"],
             file_data["content_type"],
@@ -1212,7 +1347,7 @@ Respondé como coach IA motivador suave. Si hace falta, recomendá un ajuste peq
                 "storedName": filename,
                 "contentType": file_data["content_type"],
                 "size": len(file_data["bytes"]),
-                "user": fields.get("user", ""),
+                "user": user_name,
                 "storage": {
                     "provider": "supabase" if storage_record else "local",
                     "bucket": storage_record["file"]["bucket"] if storage_record else "",

@@ -27,6 +27,7 @@ Capacidades actuales:
 - [Buckets privados de Supabase Storage](docs/storage-buckets.md)
 - [Persistencia de chats](docs/chat-persistence.md)
 - [Analisis y creacion de planes con OpenAI](docs/plan-analysis.md)
+- [Autenticacion y roles](docs/authentication.md)
 - [Variables de ambiente](docs/environment.md)
 - [Deployment en Render](docs/deployment.md)
 - [Estrategia de storage y persistencia](docs/storage-strategy.md)

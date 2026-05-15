@@ -24,6 +24,11 @@
             <span>Usuario</span>
             <select id="user-select" aria-label="Seleccionar usuario"></select>
           </label>
+          <div class="auth-actions">
+            <button class="auth-button" id="google-login" type="button">Google</button>
+            <button class="auth-button hidden" id="logout-button" type="button">Salir</button>
+            <small id="auth-status">Beta</small>
+          </div>
           <button class="icon-button" id="reset-demo" title="Reiniciar demo" aria-label="Reiniciar demo">R</button>
         </header>
 
@@ -228,6 +233,7 @@
       </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./app.js"></script>
   </body>
 </html>

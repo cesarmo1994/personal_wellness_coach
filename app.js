@@ -1,5 +1,9 @@
 const STORAGE_KEY = "pichudos-app-state-v4";
-const USERS = ["David", "Pri", "Ana", "César"];
+let USERS = ["David", "Pri", "Ana", "César"];
+let authClient = null;
+let authProfile = null;
+let authAccessToken = null;
+let authReady = false;
 
 const emptyUser = () => ({
   plans: {
@@ -75,6 +79,96 @@ function loadState() {
   }
 }
 
+function ensureUser(userName) {
+  if (!userName) return;
+  if (!USERS.includes(userName)) USERS.push(userName);
+  if (!state.users[userName]) state.users[userName] = emptyUser();
+}
+
+function applyAuthenticatedProfile(profile) {
+  if (!profile?.displayName) return;
+  authProfile = profile;
+  ensureUser(profile.displayName);
+  state.activeUser = profile.displayName;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+async function hydrateAuthenticatedUser(session) {
+  if (!session?.access_token) {
+    authProfile = null;
+    authAccessToken = null;
+    renderAuth();
+    return;
+  }
+  authAccessToken = session.access_token;
+  const response = await fetch("/api/auth/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accessToken: session.access_token }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "No se pudo validar la sesion.");
+  applyAuthenticatedProfile(data.profile);
+  renderAuth();
+}
+
+function authHeaders(base = {}) {
+  if (!authAccessToken) return base;
+  return { ...base, Authorization: `Bearer ${authAccessToken}` };
+}
+
+async function initAuth() {
+  try {
+    const response = await fetch("/api/config");
+    const config = await response.json();
+    if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) {
+      authReady = true;
+      renderAuth();
+      return;
+    }
+    authClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+    const { data } = await authClient.auth.getSession();
+    if (data?.session) await hydrateAuthenticatedUser(data.session);
+    authClient.auth.onAuthStateChange((_event, session) => {
+      hydrateAuthenticatedUser(session).then(() => render()).catch(() => renderAuth());
+    });
+  } catch {
+    authClient = null;
+  } finally {
+    authReady = true;
+    renderAuth();
+  }
+}
+
+async function loginWithGoogle() {
+  if (!authClient) return;
+  await authClient.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: window.location.origin + window.location.pathname },
+  });
+}
+
+async function logout() {
+  if (authClient) await authClient.auth.signOut();
+  authProfile = null;
+  authAccessToken = null;
+  renderAuth();
+}
+
+function renderAuth() {
+  const login = document.querySelector("#google-login");
+  const logoutButton = document.querySelector("#logout-button");
+  const status = document.querySelector("#auth-status");
+  const userSelect = document.querySelector("#user-select");
+  if (!login || !logoutButton || !status) return;
+
+  const authenticated = Boolean(authProfile);
+  login.classList.toggle("hidden", authenticated || !authClient);
+  logoutButton.classList.toggle("hidden", !authenticated);
+  status.textContent = authenticated ? authProfile.role || "auth" : authClient ? "Login" : authReady ? "Beta" : "...";
+  if (userSelect) userSelect.disabled = authenticated;
+}
+
 function saveState() {
   state.updatedAt = Date.now();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -106,7 +200,7 @@ function scheduleServerSave() {
   saveTimer = setTimeout(() => {
     fetch("/api/app-state", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ state }),
     }).catch(() => {});
   }, 350);
@@ -114,7 +208,7 @@ function scheduleServerSave() {
 
 async function syncFromServer({ notify = false } = {}) {
   try {
-    const response = await fetch("/api/app-state");
+    const response = await fetch("/api/app-state", { headers: authHeaders() });
     if (!response.ok) return;
     const data = await response.json();
     if (!data.state || !data.state.updatedAt) return;
@@ -203,7 +297,7 @@ function fallbackCoachReply(userText) {
 async function postJson(url, payload) {
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
   const data = await response.json().catch(() => ({}));
@@ -219,7 +313,7 @@ async function analyzePlanFile(planType, file) {
   formData.append("user", state.activeUser);
   formData.append("file", file);
   formData.append("notes", document.querySelector("#plan-upload-notes")?.value.trim() || "");
-  const response = await fetch("/api/analyze-plan", { method: "POST", body: formData });
+  const response = await fetch("/api/analyze-plan", { method: "POST", headers: authHeaders(), body: formData });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.error || "No se pudo analizar el archivo.");
@@ -231,7 +325,7 @@ async function uploadEvidenceFile(file) {
   const formData = new FormData();
   formData.append("user", state.activeUser);
   formData.append("file", file);
-  const response = await fetch("/api/upload-evidence", { method: "POST", body: formData });
+  const response = await fetch("/api/upload-evidence", { method: "POST", headers: authHeaders(), body: formData });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.error || "No se pudo guardar el archivo.");
@@ -349,6 +443,7 @@ function renderUserSelect() {
     select.innerHTML = USERS.map((user) => `<option value="${escapeHtml(user)}">${escapeHtml(user)}</option>`).join("");
   }
   select.value = state.activeUser;
+  select.disabled = Boolean(authProfile);
 }
 
 function renderProgress() {
@@ -654,10 +749,19 @@ document.querySelector("#checkin-form").addEventListener("submit", (event) => {
 document.querySelector("#reset-demo").addEventListener("click", () => {
   localStorage.removeItem(STORAGE_KEY);
   state = structuredClone(defaultState);
+  if (authProfile) applyAuthenticatedProfile(authProfile);
   render();
 });
 
-syncFromServer().finally(() => {
+document.querySelector("#google-login").addEventListener("click", () => {
+  loginWithGoogle().catch(() => renderAuth());
+});
+
+document.querySelector("#logout-button").addEventListener("click", () => {
+  logout().catch(() => renderAuth());
+});
+
+initAuth().finally(() => syncFromServer()).finally(() => {
   render();
   lastSeenGroupMessageCount = state.groupMessages.length;
 });

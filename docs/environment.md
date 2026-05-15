@@ -205,12 +205,19 @@ Variables requeridas para Supabase:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `ADMIN_EMAILS`
 
 Valores no secretos del proyecto:
 
 ```text
 SUPABASE_URL=https://uuwdhccchzeicdfsmpjz.supabase.co
 SUPABASE_DATA_API_URL=https://uuwdhccchzeicdfsmpjz.supabase.co/rest/v1/
+```
+
+Variable opcional para admins:
+
+```text
+ADMIN_EMAILS=cesar@ckmecr.com
 ```
 
 Variables requeridas para Strava:
