@@ -8,3 +8,5 @@ server.out.log
 *password*.txt
 *secret*.txt
 *secrets*.txt
+google_client/
+client_secret*.json

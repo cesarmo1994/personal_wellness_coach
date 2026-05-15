@@ -119,11 +119,17 @@ Regla inicial:
 
 ## Fallback beta
 
-Si Supabase Auth no esta configurado:
+Si Supabase Auth no esta configurado en el backend:
 
 - La app sigue funcionando con selector beta.
 - El boton muestra estado `Beta`.
 - No se bloquea el uso actual.
+
+Si Supabase Auth si esta configurado:
+
+- La app muestra una puerta de acceso con Google.
+- El selector manual queda bloqueado despues del login.
+- El usuario activo sale del perfil validado por Supabase Auth.
 
 ## Configuracion en Supabase
 

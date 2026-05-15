@@ -173,6 +173,41 @@ label {
   padding: 8px 18px 18px;
 }
 
+.auth-gate {
+  align-content: center;
+  display: none;
+  gap: 14px;
+  justify-items: start;
+  overflow-y: auto;
+  padding: 26px 24px;
+}
+
+.auth-gate .brand-mark {
+  height: 48px;
+  width: 48px;
+}
+
+.auth-gate h1 {
+  font-size: 28px;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.auth-gate p {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+
+.phone.auth-locked .auth-gate {
+  display: grid;
+}
+
+.phone.auth-locked .view,
+.phone.auth-locked .bottom-nav {
+  display: none;
+}
+
 .view.active {
   display: block;
 }

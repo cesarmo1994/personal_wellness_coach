@@ -157,16 +157,21 @@ async function logout() {
 
 function renderAuth() {
   const login = document.querySelector("#google-login");
+  const gate = document.querySelector("#auth-gate");
   const logoutButton = document.querySelector("#logout-button");
   const status = document.querySelector("#auth-status");
+  const phone = document.querySelector(".phone");
   const userSelect = document.querySelector("#user-select");
   if (!login || !logoutButton || !status) return;
 
   const authenticated = Boolean(authProfile);
+  const locked = Boolean(authReady && authClient && !authenticated);
   login.classList.toggle("hidden", authenticated || !authClient);
   logoutButton.classList.toggle("hidden", !authenticated);
   status.textContent = authenticated ? authProfile.role || "auth" : authClient ? "Login" : authReady ? "Beta" : "...";
   if (userSelect) userSelect.disabled = authenticated;
+  if (phone) phone.classList.toggle("auth-locked", locked);
+  if (gate) gate.classList.toggle("hidden", !locked);
 }
 
 function saveState() {
@@ -754,6 +759,10 @@ document.querySelector("#reset-demo").addEventListener("click", () => {
 });
 
 document.querySelector("#google-login").addEventListener("click", () => {
+  loginWithGoogle().catch(() => renderAuth());
+});
+
+document.querySelector("#google-login-gate").addEventListener("click", () => {
   loginWithGoogle().catch(() => renderAuth());
 });
 
