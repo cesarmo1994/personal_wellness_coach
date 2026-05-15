@@ -942,6 +942,60 @@ def create_checkin_evidence_storage_record(user_name, filename, data, content_ty
     return {"profile": profile, "checkin": checkin, "file": checkin_file, "signedUrl": signed_url, "storagePath": object_path}
 
 
+def normalize_checkin_date(value):
+    if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return value
+    return time.strftime("%Y-%m-%d")
+
+
+def checkin_metrics(done=None, evidence=None, source="checkin-endpoint"):
+    done = done if isinstance(done, list) else []
+    metrics = {
+        "source": source,
+        "completed_items": done,
+        "completed_count": len(done),
+    }
+    if evidence:
+        metrics["evidence"] = evidence
+    return metrics
+
+
+def upsert_checkin_record(profile, team, payload):
+    checkin_date = normalize_checkin_date(payload.get("date"))
+    done = payload.get("done") if isinstance(payload.get("done"), list) else []
+    note = (payload.get("note") or "").strip()
+    evidence = payload.get("evidence") if isinstance(payload.get("evidence"), dict) else {}
+    record = {
+        "profile_id": profile["id"],
+        "team_id": team["id"] if team else None,
+        "checkin_date": checkin_date,
+        "goal_completed": bool(done),
+        "notes": note or None,
+        "metrics": checkin_metrics(done, evidence),
+    }
+    existing = supabase_select_one(
+        "checkins",
+        {"profile_id": f"eq.{profile['id']}", "checkin_date": f"eq.{checkin_date}"},
+        "id,profile_id,team_id,checkin_date,goal_completed,notes,metrics,created_at,updated_at",
+    )
+    if existing:
+        updated = supabase_update("checkins", {"id": f"eq.{existing['id']}"}, record)
+        return updated[0] if updated else existing
+    return supabase_insert("checkins", record)
+
+
+def recent_checkins_for_profile(profile_id, limit=7):
+    if not get_supabase_config() or not profile_id:
+        return []
+    return supabase_select_many(
+        "checkins",
+        {"profile_id": f"eq.{profile_id}"},
+        "id,checkin_date,goal_completed,notes,metrics,created_at,updated_at",
+        order="checkin_date.desc",
+        limit=limit,
+    )
+
+
 def multipart_body(fields, files):
     boundary = f"----pichudos-{uuid.uuid4().hex}"
     chunks = []
@@ -1139,6 +1193,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self.handle_upload_evidence()
             elif self.path == "/api/auth/session":
                 self.handle_auth_session()
+            elif self.path == "/api/checkin":
+                self.handle_checkin()
             else:
                 json_response(self, 404, {"error": "Ruta no encontrada."})
         except Exception as exc:
@@ -1150,11 +1206,33 @@ class AppHandler(SimpleHTTPRequestHandler):
             return None
         return ensure_authenticated_profile(access_token)
 
-    def request_user_name(self, fallback):
+    def request_identity(self, fallback):
         session = self.authenticated_session()
         if session:
-            return session["profile"]["displayName"]
-        return fallback or "Usuario"
+            return {
+                "profile": session["profile"],
+                "team": session["team"],
+                "user_name": session["profile"]["displayName"],
+                "authenticated": True,
+            }
+        user_name = fallback or "Usuario"
+        profile = get_or_create_profile(user_name)
+        team = get_or_create_team()
+        ensure_team_member(team["id"], profile["id"])
+        return {
+            "profile": {
+                "id": profile["id"],
+                "displayName": profile["display_name"],
+                "email": profile.get("email", ""),
+                "role": profile.get("default_role", "athlete"),
+            },
+            "team": team,
+            "user_name": profile["display_name"],
+            "authenticated": False,
+        }
+
+    def request_user_name(self, fallback):
+        return self.request_identity(fallback)["user_name"]
 
     def handle_analyze_plan(self):
         fields, files = parse_multipart(self.headers, read_request_body(self))
@@ -1268,6 +1346,11 @@ class AppHandler(SimpleHTTPRequestHandler):
         message = payload.get("message", "")
         plans = payload.get("plans", {})
         checkins = payload.get("checkins", [])
+        identity = self.request_identity(payload.get("user", "Usuario")) if access_token_from_headers(self.headers) else None
+        if identity and identity.get("profile", {}).get("id"):
+            db_checkins = recent_checkins_for_profile(identity["profile"]["id"])
+            if db_checkins:
+                checkins = db_checkins
         messages = payload.get("messages", [])
         plan_context = json.dumps(plans, ensure_ascii=False)[:12000]
         checkin_context = json.dumps(checkins[-7:], ensure_ascii=False)
@@ -1315,6 +1398,21 @@ Respondé como coach IA motivador suave. Si hace falta, recomendá un ajuste peq
             return
         session = ensure_authenticated_profile(access_token)
         json_response(self, 200, session)
+
+    def handle_checkin(self):
+        payload = json.loads(read_request_body(self).decode("utf-8"))
+        identity = self.request_identity(payload.get("user", "Usuario"))
+        checkin = upsert_checkin_record(identity["profile"], identity["team"], payload)
+        json_response(
+            self,
+            200,
+            {
+                "ok": True,
+                "checkin": checkin,
+                "profile": identity["profile"],
+                "team": identity["team"],
+            },
+        )
 
     def handle_upload_evidence(self):
         fields, files = parse_multipart(self.headers, read_request_body(self))

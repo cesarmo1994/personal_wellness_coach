@@ -364,6 +364,13 @@ async function uploadEvidenceFile(file) {
   return data;
 }
 
+async function saveCheckinToServer(checkin) {
+  return postJson("/api/checkin", {
+    ...checkin,
+    user: state.activeUser,
+  });
+}
+
 function addPersonalMessage(role, text) {
   currentUser().messages.push({ role, text, at: new Date().toISOString() });
   saveState();
@@ -379,12 +386,15 @@ function markPlanLoading(key, label) {
   if (status) status.textContent = label;
 }
 
-function submitCheckin(form) {
+async function submitCheckin(form) {
   const user = currentUser();
   const done = [...form.querySelectorAll('input[name="done"]:checked')].map((input) => input.value);
   const note = document.querySelector("#checkin-note").value.trim();
   const evidenceNode = document.querySelector("#evidence-name");
   const evidence = evidenceNode.textContent;
+  const evidenceUrl = evidenceNode.dataset.url || "";
+  const evidenceFileId = evidenceNode.dataset.fileId || "";
+  const evidenceCheckinId = evidenceNode.dataset.checkinId || "";
   const summary = done.length ? done.join(", ") : "Avance registrado";
   const checkin = {
     date: todayKey(),
@@ -392,17 +402,40 @@ function submitCheckin(form) {
     done,
     note,
     evidence,
-    evidenceUrl: evidenceNode.dataset.url || "",
+    evidenceUrl,
+    evidenceFileId,
+    evidenceCheckinId,
   };
 
   user.checkins = user.checkins.filter((item) => item.date !== checkin.date);
   user.checkins.push(checkin);
+  saveState();
+
+  try {
+    const saved = await saveCheckinToServer({
+      ...checkin,
+      evidence: {
+        label: evidence,
+        url: evidenceUrl,
+        fileId: evidenceFileId,
+        checkinId: evidenceCheckinId,
+      },
+    });
+    checkin.serverId = saved.checkin?.id || "";
+    checkin.serverSavedAt = saved.checkin?.updated_at || new Date().toISOString();
+    user.checkins = user.checkins.filter((item) => item.date !== checkin.date);
+    user.checkins.push(checkin);
+  } catch (error) {
+    checkin.syncWarning = error.message;
+  }
 
   addPersonalMessage("user", `Check-in: ${summary}${note ? `. ${note}` : ""}`);
   addGroupMessage("user", state.activeUser, `Check-in: ${summary}${note ? `. ${note}` : ""}`);
   form.reset();
   document.querySelector("#evidence-name").textContent = "Foto, audio o texto del dia";
   document.querySelector("#evidence-name").dataset.url = "";
+  document.querySelector("#evidence-name").dataset.fileId = "";
+  document.querySelector("#evidence-name").dataset.checkinId = "";
   setView("group");
 }
 
@@ -760,6 +793,9 @@ document.querySelector("#evidence-input").addEventListener("change", async (even
   const file = event.target.files[0];
   if (!file) {
     document.querySelector("#evidence-name").textContent = "Foto, audio o texto del dia";
+    document.querySelector("#evidence-name").dataset.url = "";
+    document.querySelector("#evidence-name").dataset.fileId = "";
+    document.querySelector("#evidence-name").dataset.checkinId = "";
     return;
   }
   document.querySelector("#evidence-name").textContent = `Guardando ${file.name}...`;
@@ -767,14 +803,19 @@ document.querySelector("#evidence-input").addEventListener("change", async (even
     const uploaded = await uploadEvidenceFile(file);
     document.querySelector("#evidence-name").textContent = `${uploaded.name} guardado`;
     document.querySelector("#evidence-name").dataset.url = uploaded.url;
+    document.querySelector("#evidence-name").dataset.fileId = uploaded.storage?.fileId || "";
+    document.querySelector("#evidence-name").dataset.checkinId = uploaded.storage?.checkinId || "";
   } catch {
     document.querySelector("#evidence-name").textContent = `${file.name} pendiente de guardar`;
+    document.querySelector("#evidence-name").dataset.fileId = "";
+    document.querySelector("#evidence-name").dataset.checkinId = "";
   }
 });
 
-document.querySelector("#checkin-form").addEventListener("submit", (event) => {
+document.querySelector("#checkin-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  submitCheckin(event.target);
+  await submitCheckin(event.target);
+  render();
 });
 
 document.querySelector("#reset-demo").addEventListener("click", () => {

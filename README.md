@@ -26,6 +26,7 @@ Capacidades actuales:
 - [Esquema de base de datos](docs/database-schema.md)
 - [Buckets privados de Supabase Storage](docs/storage-buckets.md)
 - [Persistencia de chats](docs/chat-persistence.md)
+- [Check-ins diarios con evidencia](docs/daily-checkins.md)
 - [Analisis y creacion de planes con OpenAI](docs/plan-analysis.md)
 - [Autenticacion y roles](docs/authentication.md)
 - [Variables de ambiente](docs/environment.md)
