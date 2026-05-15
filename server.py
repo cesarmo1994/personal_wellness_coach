@@ -712,6 +712,12 @@ def load_chats_from_supabase(state):
             users[user_name]["messages"] = dedupe_client_messages(
                 [message_to_client(row, personal_user=user_name) for row in rows]
             )
+        checkin_rows = recent_checkins_for_profile(profile["id"], 30)
+        if checkin_rows:
+            users[user_name]["checkins"] = [
+                checkin_to_client(row)
+                for row in sorted(checkin_rows, key=lambda item: item.get("checkin_date") or "")
+            ]
 
     team = supabase_select_one("teams", {"slug": f"eq.{DEFAULT_GROUP_SLUG}"}, "id")
     if team:
@@ -994,6 +1000,23 @@ def recent_checkins_for_profile(profile_id, limit=7):
         order="checkin_date.desc",
         limit=limit,
     )
+
+
+def checkin_to_client(row):
+    metrics = row.get("metrics") if isinstance(row.get("metrics"), dict) else {}
+    evidence = metrics.get("evidence") if isinstance(metrics.get("evidence"), dict) else {}
+    return {
+        "date": row.get("checkin_date"),
+        "at": row.get("updated_at") or row.get("created_at") or row.get("checkin_date"),
+        "done": metrics.get("completed_items") if isinstance(metrics.get("completed_items"), list) else [],
+        "note": row.get("notes") or "",
+        "evidence": evidence.get("label", "") if evidence else "",
+        "evidenceUrl": evidence.get("url", "") if evidence else "",
+        "evidenceFileId": evidence.get("fileId", "") if evidence else "",
+        "evidenceCheckinId": evidence.get("checkinId", row.get("id", "")) if evidence else row.get("id", ""),
+        "serverId": row.get("id", ""),
+        "serverSavedAt": row.get("updated_at") or row.get("created_at") or "",
+    }
 
 
 def multipart_body(fields, files):

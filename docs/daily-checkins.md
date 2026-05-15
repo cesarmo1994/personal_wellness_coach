@@ -13,7 +13,9 @@ texto, evidencia y persistencia en Supabase.
 3. Al enviar el check-in, `POST /api/checkin` crea o actualiza el registro del
    dia en `public.checkins`.
 4. El frontend mantiene una copia local para respuesta rapida y dashboard.
-5. El coach IA recibe los check-ins recientes como contexto.
+5. Al refrescar la app, `/api/app-state` hidrata los check-ins recientes desde
+   Supabase para reconstruir el dashboard.
+6. El coach IA recibe los check-ins recientes como contexto.
 
 ## Endpoint principal
 
@@ -92,3 +94,7 @@ frontend.
 El dashboard de progreso sigue usando el estado hidratado del frontend para
 mantener una experiencia rapida en mobile. Cada check-in exitoso queda tambien
 persistido en Supabase para recuperacion, auditoria y contexto del coach.
+
+Un solo check-in diario cuenta como avance del dia. Las opciones de nutricion,
+entrenamiento y wellness indican que partes del plan se cumplieron, pero no se
+requiere crear tres check-ins separados.
