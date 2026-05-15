@@ -1,4 +1,5 @@
 const STORAGE_KEY = "pichudos-app-state-v4";
+const PRODUCTION_APP_URL = "https://personal-wellness-coach.onrender.com";
 const FALLBACK_USER = "Admin";
 const REMOVED_BETA_USERS = ["David", "Pri", "Ana", "César", "Cesar"];
 let USERS = [FALLBACK_USER];
@@ -154,9 +155,11 @@ async function initAuth() {
 
 async function loginWithGoogle() {
   if (!authClient) return;
+  const isLocalhost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const redirectTo = isLocalhost ? PRODUCTION_APP_URL : window.location.origin + window.location.pathname;
   await authClient.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: window.location.origin + window.location.pathname },
+    options: { redirectTo },
   });
 }
 

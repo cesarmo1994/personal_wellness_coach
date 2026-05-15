@@ -24,6 +24,10 @@ Supabase Auth + Google OAuth
 8. El frontend fija el usuario activo al perfil autenticado.
 9. Las acciones sensibles mandan `Authorization: Bearer <access_token>`.
 
+Nota de desarrollo: si el login se inicia desde `localhost`, el frontend fuerza
+el retorno a `https://personal-wellness-coach.onrender.com` para evitar que
+Google deje la sesion en `localhost:3000`.
+
 ## Variables requeridas
 
 En Render:
