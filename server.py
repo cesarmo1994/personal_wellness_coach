@@ -583,6 +583,8 @@ def message_to_client(row, personal_user=None):
         "text": row.get("body", ""),
         "at": row.get("created_at"),
     }
+    if row.get("client_message_id"):
+        message["clientMessageId"] = row.get("client_message_id")
     sender_name = row.get("profiles", {}).get("display_name") if isinstance(row.get("profiles"), dict) else None
     if personal_user and role == "user":
         sender_name = personal_user
@@ -607,7 +609,7 @@ def dedupe_client_messages(messages):
                 continue
             seen_defaults.add(default_key)
 
-        if deduped:
+        if deduped and not message.get("client_message_id"):
             previous = deduped[-1]
             same_content = (
                 previous.get("role") == role
@@ -737,7 +739,7 @@ def load_chats_from_supabase(state):
         rows = supabase_select_many(
             "messages",
             {"conversation_id": f"eq.{conversation['id']}", "created_at": f"gte.{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - CHAT_RETENTION_DAYS * 24 * 60 * 60))}"},
-            "id,sender_type,body,created_at,mentions_coach,profiles(display_name)",
+            "id,sender_type,body,created_at,mentions_coach,client_message_id,profiles(display_name)",
             "created_at.asc",
             500,
         )
@@ -759,7 +761,7 @@ def load_chats_from_supabase(state):
             rows = supabase_select_many(
                 "messages",
                 {"conversation_id": f"eq.{conversation['id']}", "created_at": f"gte.{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - CHAT_RETENTION_DAYS * 24 * 60 * 60))}"},
-                "id,sender_type,body,created_at,mentions_coach,profiles(display_name)",
+                "id,sender_type,body,created_at,mentions_coach,client_message_id,profiles(display_name)",
                 "created_at.asc",
                 800,
             )

@@ -259,6 +259,32 @@ function scheduleServerSave() {
   }, 350);
 }
 
+function groupMessageKey(message) {
+  if (message.clientMessageId) return `client:${message.clientMessageId}`;
+  return [
+    message.role || "",
+    message.sender || "",
+    message.text || "",
+    message.at || "",
+  ].join("|");
+}
+
+function mergeGroupMessages(serverMessages = [], localMessages = []) {
+  const merged = [];
+  const seen = new Set();
+  [...serverMessages, ...localMessages].forEach((message) => {
+    const key = groupMessageKey(message);
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(message);
+  });
+  return merged.sort((left, right) => {
+    const leftTime = Date.parse(left.at || "") || 0;
+    const rightTime = Date.parse(right.at || "") || 0;
+    return leftTime - rightTime;
+  });
+}
+
 async function syncFromServer({ notify = false, force = false } = {}) {
   try {
     const response = await fetch("/api/app-state", { headers: authHeaders() });
@@ -269,8 +295,12 @@ async function syncFromServer({ notify = false, force = false } = {}) {
     if (!force && !serverIsNewer && hasMeaningfulLocalState(state)) return;
 
     const previousCount = state.groupMessages.length;
+    const localGroupMessages = state.groupMessages || [];
     isHydrating = true;
-    state = data.state;
+    state = {
+      ...data.state,
+      groupMessages: mergeGroupMessages(data.state.groupMessages || [], localGroupMessages),
+    };
     for (const user of USERS) {
       state.users[user] = { ...emptyUser(), ...(state.users?.[user] || {}) };
     }

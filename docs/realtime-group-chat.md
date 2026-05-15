@@ -58,6 +58,10 @@ Payload:
 Esto evita el efecto de mensajes "un paso atras" cuando el autosave del estado
 local todavia no termino.
 
+Durante la hidratacion, el frontend mezcla mensajes locales y mensajes del
+servidor usando `clientMessageId` para que una lectura de DB ligeramente atrasada
+no oculte el ultimo mensaje enviado por el usuario.
+
 ## Persistencia
 
 Los mensajes se guardan en:
