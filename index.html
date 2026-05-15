@@ -223,11 +223,18 @@
 
           <section class="stats-grid">
             <article><span>Usuarios</span><strong id="stat-users">0</strong></article>
-            <article><span>Grupos</span><strong>1</strong></article>
+            <article><span>Adherencia</span><strong id="stat-adherence">0%</strong></article>
             <article><span>Hoy</span><strong id="stat-today">0</strong></article>
           </section>
 
+          <div class="admin-filters" aria-label="Filtros de dashboard">
+            <button class="active" type="button" data-admin-filter="all">Todos</button>
+            <button type="button" data-admin-filter="pending">Pendientes</button>
+            <button type="button" data-admin-filter="alerts">Alertas</button>
+          </div>
+
           <section class="admin-list" id="admin-list"></section>
+          <section class="admin-detail" id="admin-detail"></section>
         </section>
 
         <nav class="bottom-nav" aria-label="Navegacion principal">

@@ -9,6 +9,8 @@ let authAccessToken = null;
 let authReady = false;
 let groupRealtimeChannel = null;
 let realtimeSyncTimer = null;
+let adminFilter = "all";
+let selectedAdminUser = "";
 
 const emptyUser = () => ({
   plans: {
@@ -364,6 +366,40 @@ function groupAverage() {
   return Math.round((total / (USERS.length * 7)) * 100);
 }
 
+function userDashboardStats(userName) {
+  const user = state.users[userName] || emptyUser();
+  const plansLoaded = Object.values(user.plans || {}).filter(Boolean).length;
+  const checkins = [...(user.checkins || [])].sort((left, right) => String(right.date).localeCompare(String(left.date)));
+  const latest = checkins[0] || null;
+  const todayDone = checkins.some((checkin) => checkin.date === todayKey());
+  const adherence = weeklyCount(userName);
+  const recentText = checkins
+    .slice(0, 5)
+    .map((checkin) => `${checkin.note || ""} ${(checkin.done || []).join(" ")}`)
+    .join(" ")
+    .toLowerCase();
+  const recoveryAlert = /dolor|fatiga|cans|sue[nñ]o|estr[eé]s|ansiedad|molest/.test(recentText);
+  const pendingAlert = !todayDone || adherence < 3 || plansLoaded < 3;
+  const alerts = [
+    !todayDone ? "Check-in pendiente hoy" : "",
+    adherence < 3 ? "Baja adherencia semanal" : "",
+    plansLoaded < 3 ? "Planes incompletos" : "",
+    recoveryAlert ? "Revisar fatiga/recuperacion" : "",
+  ].filter(Boolean);
+  return {
+    user,
+    plansLoaded,
+    checkins,
+    latest,
+    todayDone,
+    adherence,
+    adherencePct: Math.round((adherence / 7) * 100),
+    alerts,
+    hasAlert: alerts.length > 0,
+    isPending: !todayDone,
+  };
+}
+
 function fallbackCoachReply(userText) {
   const loadedPlans = Object.values(currentUser().plans).filter(Boolean).length;
   const count = weeklyCount();
@@ -699,6 +735,78 @@ function renderAdmin() {
   });
 }
 
+function renderAdminDashboard() {
+  if (!selectedAdminUser || !USERS.includes(selectedAdminUser)) selectedAdminUser = state.activeUser;
+  document.querySelector("#stat-users").textContent = USERS.length;
+  document.querySelector("#stat-today").textContent = USERS.filter((user) =>
+    state.users[user].checkins.some((checkin) => checkin.date === todayKey())
+  ).length;
+  document.querySelector("#stat-adherence").textContent = `${groupAverage()}%`;
+
+  const list = document.querySelector("#admin-list");
+  list.innerHTML = "";
+  const rows = USERS.map((user) => ({ user, stats: userDashboardStats(user) })).filter(({ stats }) => {
+    if (adminFilter === "pending") return stats.isPending;
+    if (adminFilter === "alerts") return stats.hasAlert;
+    return true;
+  });
+
+  document.querySelectorAll("[data-admin-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.adminFilter === adminFilter);
+  });
+
+  rows.forEach(({ user, stats }) => {
+    const row = document.createElement("article");
+    row.className = `admin-row ${stats.hasAlert ? "warn" : ""} ${selectedAdminUser === user ? "active" : ""}`;
+    row.dataset.adminUser = user;
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(user)}</strong>
+        <span>Los Pichudos · ${stats.adherence}/7 · ${stats.plansLoaded}/3 planes</span>
+      </div>
+      <b>${stats.todayDone ? "Hoy listo" : "Pendiente"}</b>
+      <div class="progress"><i style="width: ${stats.adherencePct}%"></i></div>
+      <small>${escapeHtml(stats.alerts[0] || stats.latest?.note || "Sin alertas")}</small>
+    `;
+    list.appendChild(row);
+  });
+
+  if (!rows.length) {
+    list.innerHTML = `<article class="admin-row"><strong>Sin resultados</strong><span>No hay atletas para este filtro.</span></article>`;
+  }
+
+  const detail = document.querySelector("#admin-detail");
+  const stats = userDashboardStats(selectedAdminUser);
+  const planSummary = Object.entries(stats.user.plans || {})
+    .map(([key, plan]) => `${planNames[key] || key}: ${plan ? "cargado" : "pendiente"}`)
+    .join(" · ");
+  const recent = stats.checkins.slice(0, 5);
+  detail.innerHTML = `
+    <div class="screen-title compact-title">
+      <p>Drill-down</p>
+      <h2>${escapeHtml(selectedAdminUser)}</h2>
+    </div>
+    <section class="insight-list">
+      <article><span>Adherencia semanal</span><strong>${stats.adherence}/7 (${stats.adherencePct}%)</strong></article>
+      <article><span>Planes</span><strong>${escapeHtml(planSummary || "Sin planes")}</strong></article>
+      <article><span>Alertas</span><strong>${escapeHtml(stats.alerts.join(" · ") || "Sin alertas")}</strong></article>
+    </section>
+    <section class="admin-history">
+      ${recent.length ? recent.map((checkin) => `
+        <article>
+          <strong>${escapeHtml(checkin.date || "")}</strong>
+          <span>${escapeHtml((checkin.done || []).join(", ") || "Check-in")}</span>
+          <small>${escapeHtml(checkin.note || checkin.evidence || "Sin nota")}</small>
+        </article>
+      `).join("") : "<article><strong>Sin historial</strong><span>No hay check-ins recientes.</span></article>"}
+    </section>
+  `;
+}
+
+function renderAdmin() {
+  renderAdminDashboard();
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -709,6 +817,18 @@ function escapeHtml(value) {
 }
 
 document.addEventListener("click", (event) => {
+  const filterTrigger = event.target.closest("[data-admin-filter]");
+  if (filterTrigger) {
+    adminFilter = filterTrigger.dataset.adminFilter;
+    render();
+    return;
+  }
+  const adminRow = event.target.closest("[data-admin-user]");
+  if (adminRow) {
+    selectedAdminUser = adminRow.dataset.adminUser;
+    render();
+    return;
+  }
   const viewTrigger = event.target.closest("[data-view]");
   if (viewTrigger) {
     setView(viewTrigger.dataset.view);

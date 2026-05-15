@@ -28,6 +28,7 @@ Capacidades actuales:
 - [Persistencia de chats](docs/chat-persistence.md)
 - [Chat grupal realtime con @coach](docs/realtime-group-chat.md)
 - [Check-ins diarios con evidencia](docs/daily-checkins.md)
+- [Dashboard de coach y equipo](docs/coach-dashboard.md)
 - [Analisis y creacion de planes con OpenAI](docs/plan-analysis.md)
 - [Autenticacion y roles](docs/authentication.md)
 - [Variables de ambiente](docs/environment.md)

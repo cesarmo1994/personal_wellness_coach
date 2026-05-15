@@ -608,10 +608,76 @@ input[type="text"]:focus {
   font-size: 26px;
 }
 
-.admin-row {
+.admin-filters {
   display: grid;
-  gap: 4px;
+  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 12px;
+}
+
+.admin-filters button {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  padding: 10px 8px;
+}
+
+.admin-filters button.active {
+  background: var(--sage-soft);
+  color: var(--sage);
+}
+
+.admin-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
   padding: 14px;
+}
+
+.admin-row.active {
+  border-color: var(--sage);
+}
+
+.admin-row.warn {
+  background: var(--warn-soft);
+}
+
+.admin-row b {
+  color: var(--sage);
+  font-size: 12px;
+}
+
+.compact-title {
+  margin-top: 18px;
+}
+
+.insight-list,
+.admin-history {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.insight-list article,
+.admin-history article {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.insight-list span,
+.admin-history span,
+.admin-history small {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .bottom-nav {
