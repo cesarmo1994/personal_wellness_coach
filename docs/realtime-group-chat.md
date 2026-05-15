@@ -79,3 +79,8 @@ flujo de sincronizacion.
 La app mantiene polling cada 5 segundos con `/api/app-state`. Si Realtime no
 esta disponible, el chat sigue sincronizando sin refrescar manualmente, solo con
 mayor latencia.
+
+En mobile, el navegador puede pausar o retrasar eventos Realtime cuando la
+pestana queda en segundo plano o el sistema limita conexiones. Por eso el
+polling usa hidratacion forzada y la app sincroniza tambien cuando la ventana
+recupera foco o vuelve a estar visible.

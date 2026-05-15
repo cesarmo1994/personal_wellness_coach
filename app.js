@@ -903,11 +903,20 @@ document.querySelector("#logout-button").addEventListener("click", () => {
   logout().catch(() => renderAuth());
 });
 
-initAuth().finally(() => syncFromServer()).finally(() => {
+initAuth().finally(() => syncFromServer({ force: true })).finally(() => {
   render();
   lastSeenGroupMessageCount = state.groupMessages.length;
 });
-setInterval(() => syncFromServer({ notify: true }), 5000);
+
+setInterval(() => syncFromServer({ notify: true, force: true }), 5000);
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) scheduleRealtimeSync();
+});
+
+window.addEventListener("focus", () => {
+  scheduleRealtimeSync();
+});
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
