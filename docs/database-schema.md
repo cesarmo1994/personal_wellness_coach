@@ -117,6 +117,8 @@ Regla inicial:
 
 - Solo puede existir un plan activo por usuario y tipo de plan.
 
+El backend archiva automaticamente el plan activo anterior del mismo tipo cuando OpenAI crea o analiza un plan nuevo.
+
 Esto permite que un atleta tenga simultaneamente:
 
 - Un plan de nutricion activo.

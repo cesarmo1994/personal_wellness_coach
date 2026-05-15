@@ -490,6 +490,7 @@ document.querySelectorAll("[data-plan-input]").forEach((input) => {
         extraction: analysis.extraction,
         fileUrl: analysis.fileUrl,
         notes: analysis.notes,
+        storage: analysis.storage || null,
         updatedAt: new Date().toISOString(),
       };
       addPersonalMessage("system", `Plan de ${planNames[key]} cargado y analizado: ${file.name}`);
@@ -545,6 +546,7 @@ document.querySelector("#wellness-builder").addEventListener("submit", async (ev
       notes,
       summary: plan.summary,
       responseId: plan.responseId,
+      storage: plan.storage || null,
       updatedAt: new Date().toISOString(),
     };
     addPersonalMessage("coach", plan.summary);

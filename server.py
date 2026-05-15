@@ -33,6 +33,8 @@ SIGNED_URL_TTL_SECONDS = 60 * 60
 CHAT_RETENTION_DAYS = int(os.getenv("CHAT_RETENTION_DAYS", "30"))
 DEFAULT_GROUP_NAME = "Los Pichudos"
 DEFAULT_GROUP_SLUG = "los-pichudos"
+MAX_PLAN_FILE_BYTES = 25 * 1024 * 1024
+SUPPORTED_PLAN_SUFFIXES = {".pdf", ".docx", ".xlsx", ".csv", ".tsv", ".txt", ".md"}
 
 
 PLAN_LABELS = {
@@ -334,6 +336,17 @@ def supabase_insert_ignore(table, payload):
         if "duplicate key value" in str(exc) or "23505" in str(exc):
             return None
         raise
+
+
+def supabase_update(table, filters, payload):
+    query = urllib.parse.urlencode(filters)
+    result = supabase_request(
+        "PATCH",
+        f"/rest/v1/{table}?{query}",
+        payload,
+        {"Prefer": "return=representation"},
+    )
+    return result if isinstance(result, list) else []
 
 
 def supabase_select_one(table, filters, select="id"):
@@ -650,6 +663,28 @@ def file_kind_for(filename, content_type=""):
     return "other"
 
 
+def validate_plan_upload(filename, data):
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_PLAN_SUFFIXES:
+        allowed = ", ".join(sorted(SUPPORTED_PLAN_SUFFIXES))
+        raise RuntimeError(f"Formato no soportado para planes: {suffix or 'sin extension'}. UsÃ¡ uno de estos: {allowed}.")
+    if len(data) > MAX_PLAN_FILE_BYTES:
+        raise RuntimeError("El archivo es muy grande para esta beta. SubÃ­ un archivo de 25 MB o menos.")
+    if suffix == ".pdf":
+        return "file"
+    return "text"
+
+
+def archive_active_plans(profile_id, plan_type):
+    if not get_supabase_config():
+        return []
+    return supabase_update(
+        "plans",
+        {"profile_id": f"eq.{profile_id}", "plan_type": f"eq.{plan_type}", "status": "eq.active"},
+        {"status": "archived", "archived_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+    )
+
+
 def storage_object_path(bucket, profile_id, filename, plan_id=None, checkin_id=None):
     safe_name = safe_upload_name(filename)
     if bucket == "plan-files":
@@ -701,20 +736,28 @@ def create_supabase_signed_url(bucket, object_path, expires_in=SIGNED_URL_TTL_SE
     return ""
 
 
-def create_plan_storage_record(user_name, plan_type, filename, data, content_type, user_notes, summary):
+def create_plan_storage_record(user_name, plan_type, filename, data, content_type, user_notes, summary, response_id="", extracted_text="", openai_file_id=""):
     if not get_supabase_config():
         return None
     profile = get_or_create_profile(user_name)
+    archive_active_plans(profile["id"], plan_type)
     plan = supabase_insert(
         "plans",
         {
             "profile_id": profile["id"],
             "plan_type": plan_type,
-            "status": "draft",
+            "status": "active",
             "source": "upload",
             "title": filename,
             "user_notes": user_notes,
             "summary": summary,
+            "structured_plan": {
+                "summary": summary,
+                "response_id": response_id,
+                "source": "openai_upload_analysis",
+                "file_name": filename,
+            },
+            "activated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         },
     )
     object_path = storage_object_path("plan-files", profile["id"], filename, plan.get("id"))
@@ -731,10 +774,37 @@ def create_plan_storage_record(user_name, plan_type, filename, data, content_typ
             "content_type": content_type,
             "file_kind": file_kind_for(filename, content_type),
             "size_bytes": len(data),
+            "extracted_text": extracted_text or None,
+            "openai_file_id": openai_file_id or None,
             "metadata": {"signed_url_ttl_seconds": SIGNED_URL_TTL_SECONDS},
         },
     )
     return {"profile": profile, "plan": plan, "file": plan_file, "signedUrl": signed_url, "storagePath": object_path}
+
+
+def create_conversation_plan_record(user_name, plan_type, notes, summary, response_id=""):
+    if not get_supabase_config():
+        return None
+    profile = get_or_create_profile(user_name)
+    archive_active_plans(profile["id"], plan_type)
+    return supabase_insert(
+        "plans",
+        {
+            "profile_id": profile["id"],
+            "plan_type": plan_type,
+            "status": "active",
+            "source": "conversation",
+            "title": f"Plan de {PLAN_LABELS.get(plan_type, plan_type)} creado por IA",
+            "user_notes": notes,
+            "summary": summary,
+            "structured_plan": {
+                "summary": summary,
+                "response_id": response_id,
+                "source": "openai_conversation",
+            },
+            "activated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        },
+    )
 
 
 def create_checkin_evidence_storage_record(user_name, filename, data, content_type):
@@ -977,14 +1047,21 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         filename = file_data["filename"]
         data = file_data["bytes"]
+        extraction_strategy = validate_plan_upload(filename, data)
         ensure_data_dirs()
         stored_name = safe_upload_name(filename)
         (UPLOAD_DIR / stored_name).write_bytes(data)
         file_url = f"/uploads/{stored_name}"
-        extracted = trim_text(extract_text(filename, data))
+        try:
+            extracted = trim_text(extract_text(filename, data))
+        except Exception as exc:
+            raise RuntimeError(f"No pude extraer texto de {filename}. Si es Word/Excel, guardalo como DOCX, XLSX o CSV e intentalo de nuevo.") from exc
+        if extraction_strategy == "text" and not extracted:
+            raise RuntimeError("No pude leer texto del archivo. ProbÃ¡ convertirlo a PDF, DOCX, XLSX, CSV o TXT y subilo de nuevo.")
         content = [{"type": "input_text", "text": build_analysis_prompt(plan_type, filename, extracted, user_notes)}]
+        openai_file_id = ""
 
-        if not extracted:
+        if extraction_strategy == "file":
             openai_file_id = upload_openai_file(filename, data, file_data["content_type"])
             content = [
                 {
@@ -1011,6 +1088,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             file_data["content_type"],
             user_notes,
             answer,
+            response_id,
+            extracted,
+            openai_file_id,
         )
         if storage_record and storage_record.get("signedUrl"):
             file_url = storage_record["signedUrl"]
@@ -1022,7 +1102,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 "name": filename,
                 "summary": answer,
                 "responseId": response_id,
-                "extraction": "text" if extracted else "file",
+                "extraction": "text" if extraction_strategy == "text" else "file",
                 "fileUrl": file_url,
                 "storage": {
                     "provider": "supabase" if storage_record else "local",
@@ -1040,12 +1120,27 @@ class AppHandler(SimpleHTTPRequestHandler):
         plan_type = payload.get("planType", "wellness")
         notes = payload.get("notes", "")
         messages = payload.get("messages", [])
+        user_name = payload.get("user", "Usuario")
         prompt = build_creation_prompt(plan_type, notes, messages)
         answer, response_id = call_openai(
             [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
             max_output_tokens=1300,
         )
-        json_response(self, 200, {"planType": plan_type, "name": f"Plan de {PLAN_LABELS.get(plan_type, plan_type)} creado por IA", "summary": answer, "responseId": response_id})
+        plan_record = create_conversation_plan_record(user_name, plan_type, notes, answer, response_id)
+        json_response(
+            self,
+            200,
+            {
+                "planType": plan_type,
+                "name": f"Plan de {PLAN_LABELS.get(plan_type, plan_type)} creado por IA",
+                "summary": answer,
+                "responseId": response_id,
+                "storage": {
+                    "provider": "supabase" if plan_record else "local",
+                    "planId": plan_record["id"] if plan_record else "",
+                },
+            },
+        )
 
     def handle_chat(self):
         payload = json.loads(read_request_body(self).decode("utf-8"))
