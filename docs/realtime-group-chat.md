@@ -8,7 +8,8 @@ equipos y grupos privados.
 ## Flujo
 
 1. El usuario envia un mensaje en el chat grupal.
-2. El frontend lo agrega al estado local y lo sincroniza con `/api/app-state`.
+2. El frontend lo agrega al estado local y llama `POST /api/group-message`
+   para persistirlo inmediatamente.
 3. El backend persiste el mensaje en `public.messages`.
 4. Supabase Realtime emite el `INSERT` de `messages`.
 5. Los clientes suscritos reciben el evento y fuerzan una hidratacion desde
@@ -34,6 +35,28 @@ authClient
 La migracion `supabase/migrations/202605150006_realtime_messages.sql` agrega
 `public.messages` a la publicacion `supabase_realtime` y concede `select` a
 `anon`/`authenticated` para que el cliente pueda recibir eventos.
+
+## Endpoint de mensajes
+
+### `POST /api/group-message`
+
+Guarda un mensaje del thread grupal sin esperar el autosave completo de
+`/api/app-state`.
+
+Payload:
+
+```json
+{
+  "user": "César",
+  "role": "user",
+  "message": "Hoy cerré el check-in",
+  "at": "2026-05-15T13:00:00.000Z",
+  "clientMessageId": "group-123"
+}
+```
+
+Esto evita el efecto de mensajes "un paso atras" cuando el autosave del estado
+local todavia no termino.
 
 ## Persistencia
 

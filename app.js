@@ -404,14 +404,38 @@ async function saveCheckinToServer(checkin) {
   });
 }
 
+function messageClientId(scope, message) {
+  const raw = `${scope}:${message.sender || ""}:${message.role || ""}:${message.text || ""}:${message.at || ""}`;
+  let hash = 0;
+  for (let index = 0; index < raw.length; index += 1) {
+    hash = (hash << 5) - hash + raw.charCodeAt(index);
+    hash |= 0;
+  }
+  return `${scope}-${Math.abs(hash)}`;
+}
+
 function addPersonalMessage(role, text) {
   currentUser().messages.push({ role, text, at: new Date().toISOString() });
   saveState();
 }
 
 function addGroupMessage(role, sender, text) {
-  state.groupMessages.push({ role, sender, text, at: new Date().toISOString() });
+  const message = { role, sender, text, at: new Date().toISOString() };
+  message.clientMessageId = messageClientId("group", message);
+  state.groupMessages.push(message);
   saveState();
+  return message;
+}
+
+async function saveGroupMessageToServer(message) {
+  if (message.role === "system") return null;
+  return postJson("/api/group-message", {
+    user: state.activeUser,
+    role: message.role,
+    message: message.text,
+    at: message.at,
+    clientMessageId: message.clientMessageId,
+  });
 }
 
 function markPlanLoading(key, label) {
@@ -505,7 +529,9 @@ async function askGroupCoach(text) {
       plans: { group: groupContext },
       checkins: groupContext,
     });
-    addGroupMessage("coach", "Coach", data.reply);
+    const coachMessage = addGroupMessage("coach", "Coach", data.reply);
+    await saveGroupMessageToServer(coachMessage).catch(() => {});
+    scheduleRealtimeSync();
   } catch (error) {
     addGroupMessage("coach", "Coach", `Puedo ayudar, pero ahora no pude conectar con OpenAI (${error.message}).`);
   }
@@ -775,9 +801,16 @@ document.querySelector("#group-chat-form").addEventListener("submit", async (eve
   const text = input.value.trim();
   if (!text) return;
 
-  addGroupMessage("user", state.activeUser, text);
+  const message = addGroupMessage("user", state.activeUser, text);
   input.value = "";
   render();
+  try {
+    await saveGroupMessageToServer(message);
+    scheduleRealtimeSync();
+  } catch (error) {
+    addGroupMessage("system", "Sistema", `No pude guardar el mensaje todavia: ${error.message}`);
+    render();
+  }
 
   if (text.toLowerCase().includes("@coach")) {
     await askGroupCoach(text);

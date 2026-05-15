@@ -689,6 +689,39 @@ def sync_chats_to_supabase(state):
         )
 
 
+def insert_group_message(profile, team, text, role="user", created_at=None, client_message_id=None):
+    body = (text or "").strip()
+    if not body:
+        raise ValueError("Mensaje vacio.")
+    conversation = get_or_create_conversation("group", team_id=team["id"], title=DEFAULT_GROUP_NAME)
+    client_id = client_message_id or stable_message_id(
+        "group:los-pichudos",
+        {
+            "role": role,
+            "sender": profile.get("displayName") or profile.get("display_name", ""),
+            "text": body,
+            "at": created_at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        },
+    )
+    existing = supabase_select_one("messages", {"client_message_id": f"eq.{client_id}"}, "id")
+    if existing:
+        return existing
+    return supabase_insert(
+        "messages",
+        {
+            "conversation_id": conversation["id"],
+            "profile_id": profile["id"] if role == "user" else None,
+            "team_id": team["id"],
+            "sender_type": sender_type_from_role(role),
+            "body": body,
+            "mentions_coach": "@coach" in body.lower(),
+            "client_message_id": client_id,
+            "created_at": iso_timestamp(created_at),
+            "ai_context": {"scope": "group", "sender": profile.get("displayName") or profile.get("display_name", "")},
+        },
+    )
+
+
 def load_chats_from_supabase(state):
     if not get_supabase_config() or not isinstance(state, dict):
         return state
@@ -1210,6 +1243,8 @@ class AppHandler(SimpleHTTPRequestHandler):
                 self.handle_create_plan()
             elif self.path == "/api/chat":
                 self.handle_chat()
+            elif self.path == "/api/group-message":
+                self.handle_group_message()
             elif self.path == "/api/app-state":
                 self.handle_save_state()
             elif self.path == "/api/upload-evidence":
@@ -1398,6 +1433,19 @@ Respondé como coach IA motivador suave. Si hace falta, recomendá un ajuste peq
             max_output_tokens=800,
         )
         json_response(self, 200, {"reply": answer, "responseId": response_id})
+
+    def handle_group_message(self):
+        payload = json.loads(read_request_body(self).decode("utf-8"))
+        identity = self.request_identity(payload.get("user", "Usuario"))
+        message = insert_group_message(
+            identity["profile"],
+            identity["team"],
+            payload.get("message", ""),
+            role=payload.get("role", "user"),
+            created_at=payload.get("at"),
+            client_message_id=payload.get("clientMessageId"),
+        )
+        json_response(self, 200, {"ok": True, "message": message})
 
     def handle_save_state(self):
         payload = json.loads(read_request_body(self).decode("utf-8"))
