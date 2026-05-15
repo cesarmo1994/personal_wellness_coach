@@ -1,5 +1,7 @@
 const STORAGE_KEY = "pichudos-app-state-v4";
-let USERS = ["David", "Pri", "Ana", "César"];
+const FALLBACK_USER = "Admin";
+const REMOVED_BETA_USERS = ["David", "Pri", "Ana", "César", "Cesar"];
+let USERS = [FALLBACK_USER];
 let authClient = null;
 let authProfile = null;
 let authAccessToken = null;
@@ -22,7 +24,7 @@ const emptyUser = () => ({
 });
 
 const defaultState = {
-  activeUser: "César",
+  activeUser: FALLBACK_USER,
   activeView: "onboarding",
   users: Object.fromEntries(USERS.map((name) => [name, emptyUser()])),
   updatedAt: 0,
@@ -30,7 +32,7 @@ const defaultState = {
     {
       role: "system",
       sender: "Sistema",
-      text: "Chat grupal listo. David, Pri, Ana y César pueden escribir aqui. El coach solo responde si lo etiquetan con @coach.",
+      text: "Chat listo. El coach solo responde si lo etiquetan con @coach.",
       at: new Date().toISOString(),
     },
   ],
@@ -72,10 +74,18 @@ function loadState() {
     for (const user of USERS) {
       next.users[user] = { ...emptyUser(), ...(next.users?.[user] || {}) };
     }
-    if (!USERS.includes(next.activeUser)) next.activeUser = "César";
+    removeBetaProfilesFromState(next);
+    if (!USERS.includes(next.activeUser)) next.activeUser = FALLBACK_USER;
     return next;
   } catch {
     return structuredClone(defaultState);
+  }
+}
+
+function removeBetaProfilesFromState(targetState, keepUser = "") {
+  if (!targetState?.users) return;
+  for (const user of REMOVED_BETA_USERS) {
+    if (user !== keepUser) delete targetState.users[user];
   }
 }
 
@@ -88,6 +98,8 @@ function ensureUser(userName) {
 function applyAuthenticatedProfile(profile) {
   if (!profile?.displayName) return;
   authProfile = profile;
+  USERS = [profile.displayName];
+  removeBetaProfilesFromState(state, profile.displayName);
   ensureUser(profile.displayName);
   state.activeUser = profile.displayName;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -226,7 +238,15 @@ async function syncFromServer({ notify = false } = {}) {
     for (const user of USERS) {
       state.users[user] = { ...emptyUser(), ...(state.users?.[user] || {}) };
     }
-    if (!USERS.includes(state.activeUser)) state.activeUser = "César";
+    if (authProfile) {
+      USERS = [authProfile.displayName];
+      removeBetaProfilesFromState(state, authProfile.displayName);
+      ensureUser(authProfile.displayName);
+      state.activeUser = authProfile.displayName;
+    } else {
+      removeBetaProfilesFromState(state);
+      if (!USERS.includes(state.activeUser)) state.activeUser = FALLBACK_USER;
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     isHydrating = false;
 
@@ -252,6 +272,7 @@ function notifyNewGroupMessages(previousCount = lastSeenGroupMessageCount) {
 }
 
 function currentUser() {
+  ensureUser(state.activeUser);
   return state.users[state.activeUser];
 }
 
@@ -266,11 +287,13 @@ function todayKey() {
 }
 
 function weeklyCount(userName = state.activeUser) {
-  const days = new Set(state.users[userName].checkins.map((checkin) => checkin.date));
+  const user = state.users[userName] || emptyUser();
+  const days = new Set(user.checkins.map((checkin) => checkin.date));
   return Math.min(days.size, 7);
 }
 
 function groupAverage() {
+  if (!USERS.length) return 0;
   const total = USERS.reduce((sum, user) => sum + weeklyCount(user), 0);
   return Math.round((total / (USERS.length * 7)) * 100);
 }

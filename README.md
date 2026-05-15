@@ -8,7 +8,7 @@ La app corre como una web app mobile-first con backend Python en `server.py` y f
 
 Capacidades actuales:
 
-- Selector de usuario beta sin contrasena: David, Pri, Ana y Cesar.
+- Login con Google mediante Supabase Auth.
 - Plan activo por usuario.
 - Check-ins diarios y evidencia.
 - Chat personal con coach IA.

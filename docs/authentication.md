@@ -116,12 +116,14 @@ Regla inicial:
 - Emails en `ADMIN_EMAILS` quedan como `owner`.
 - Otros usuarios quedan como `athlete`.
 - Owners se agregan al equipo como `team_admin`.
+- El perfil admin inicial queda asociado al correo `cesar@ckmecr.com`.
+- Los perfiles beta fijos David, Pri, Ana y Cesar se removieron del estado inicial.
 
 ## Fallback beta
 
 Si Supabase Auth no esta configurado en el backend:
 
-- La app sigue funcionando con selector beta.
+- La app sigue funcionando con un usuario local `Admin`.
 - El boton muestra estado `Beta`.
 - No se bloquea el uso actual.
 
@@ -130,6 +132,14 @@ Si Supabase Auth si esta configurado:
 - La app muestra una puerta de acceso con Google.
 - El selector manual queda bloqueado despues del login.
 - El usuario activo sale del perfil validado por Supabase Auth.
+
+## Limpieza de perfiles beta
+
+La migracion `supabase/migrations/202605150005_google_auth_admin_profile.sql`:
+
+- Borra perfiles beta sin `auth_user_id` ni `email` con nombres David, Pri, Ana y Cesar.
+- Crea o actualiza el perfil `César` con `email = cesar@ckmecr.com`.
+- Asigna ese perfil como `owner` y miembro `team_admin` del equipo `Los Pichudos`.
 
 ## Configuracion en Supabase
 

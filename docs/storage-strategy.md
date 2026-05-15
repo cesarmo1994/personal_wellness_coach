@@ -220,7 +220,7 @@ Requisitos:
 Cuando se implemente Supabase:
 
 1. Leer `app_state.json`.
-2. Crear usuarios beta: David, Pri, Ana y Cesar.
+2. Crear o enlazar perfiles autenticados por Google.
 3. Crear equipo inicial.
 4. Insertar planes activos.
 5. Insertar mensajes personales y grupales.

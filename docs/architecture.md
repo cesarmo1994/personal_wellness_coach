@@ -171,10 +171,9 @@ Referencias oficiales:
 
 Beta actual:
 
-- David
-- Pri
-- Ana
-- Cesar
+- Login con Google via Supabase Auth.
+- Perfil admin inicial: `cesar@ckmecr.com`.
+- Los perfiles fijos David, Pri, Ana y Cesar fueron retirados del estado inicial.
 
 Modelo productivo:
 

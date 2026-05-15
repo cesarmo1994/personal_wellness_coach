@@ -304,13 +304,9 @@ def admin_emails():
 
 
 def infer_beta_display_name(email, full_name):
+    if (email or "").lower() in admin_emails():
+        return "César"
     source = f"{full_name or ''} {email or ''}".lower()
-    if "david" in source:
-        return "David"
-    if "ana" in source:
-        return "Ana"
-    if "pri" in source or "prisc" in source:
-        return "Pri"
     if "cesar" in source or "cÃ©sar" in source:
         return "CÃ©sar"
     return (full_name or email or "Usuario").split()[0]

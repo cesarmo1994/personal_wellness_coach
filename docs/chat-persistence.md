@@ -94,7 +94,7 @@ Slug:
 los-pichudos
 ```
 
-Los usuarios beta se crean/reutilizan como `profiles` y se agregan a `team_members`.
+Los usuarios autenticados se crean/reutilizan como `profiles` y se agregan a `team_members`.
 
 ## Retencion
 
