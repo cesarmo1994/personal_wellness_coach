@@ -7,6 +7,8 @@ let authClient = null;
 let authProfile = null;
 let authAccessToken = null;
 let authReady = false;
+let groupRealtimeChannel = null;
+let realtimeSyncTimer = null;
 
 const emptyUser = () => ({
   plans: {
@@ -141,9 +143,17 @@ async function initAuth() {
     }
     authClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
     const { data } = await authClient.auth.getSession();
-    if (data?.session) await hydrateAuthenticatedUser(data.session);
+    if (data?.session) {
+      await hydrateAuthenticatedUser(data.session);
+      subscribeToGroupRealtime();
+    }
     authClient.auth.onAuthStateChange((_event, session) => {
-      hydrateAuthenticatedUser(session).then(() => render()).catch(() => renderAuth());
+      hydrateAuthenticatedUser(session)
+        .then(() => {
+          if (session) subscribeToGroupRealtime();
+          render();
+        })
+        .catch(() => renderAuth());
     });
   } catch {
     authClient = null;
@@ -151,6 +161,25 @@ async function initAuth() {
     authReady = true;
     renderAuth();
   }
+}
+
+function scheduleRealtimeSync() {
+  clearTimeout(realtimeSyncTimer);
+  realtimeSyncTimer = setTimeout(() => {
+    syncFromServer({ notify: true, force: true }).catch(() => {});
+  }, 250);
+}
+
+function subscribeToGroupRealtime() {
+  if (!authClient || groupRealtimeChannel) return;
+  groupRealtimeChannel = authClient
+    .channel("pichudos-group-messages")
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "messages" },
+      () => scheduleRealtimeSync()
+    )
+    .subscribe();
 }
 
 async function loginWithGoogle() {
@@ -164,6 +193,10 @@ async function loginWithGoogle() {
 }
 
 async function logout() {
+  if (groupRealtimeChannel && authClient) {
+    await authClient.removeChannel(groupRealtimeChannel);
+  }
+  groupRealtimeChannel = null;
   if (authClient) await authClient.auth.signOut();
   authProfile = null;
   authAccessToken = null;
@@ -226,14 +259,14 @@ function scheduleServerSave() {
   }, 350);
 }
 
-async function syncFromServer({ notify = false } = {}) {
+async function syncFromServer({ notify = false, force = false } = {}) {
   try {
     const response = await fetch("/api/app-state", { headers: authHeaders() });
     if (!response.ok) return;
     const data = await response.json();
     if (!data.state || !data.state.updatedAt) return;
     const serverIsNewer = (data.state.serverSavedAt || data.state.updatedAt || 0) > (state.serverSavedAt || state.updatedAt || 0);
-    if (!serverIsNewer && hasMeaningfulLocalState(state)) return;
+    if (!force && !serverIsNewer && hasMeaningfulLocalState(state)) return;
 
     const previousCount = state.groupMessages.length;
     isHydrating = true;
