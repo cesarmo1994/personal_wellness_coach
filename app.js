@@ -21,7 +21,7 @@ const defaultState = {
   activeUser: "César",
   activeView: "onboarding",
   users: Object.fromEntries(USERS.map((name) => [name, emptyUser()])),
-  updatedAt: Date.now(),
+  updatedAt: 0,
   groupMessages: [
     {
       role: "system",
@@ -81,6 +81,26 @@ function saveState() {
   if (!isHydrating) scheduleServerSave();
 }
 
+function isDefaultCoachWelcome(message) {
+  return message?.role === "coach" && (message.text || "").startsWith("Bienvenido.");
+}
+
+function isDefaultGroupWelcome(message) {
+  return message?.role === "system" && (message.text || "").startsWith("Chat grupal listo.");
+}
+
+function hasMeaningfulLocalState(candidate = state) {
+  const users = candidate.users || {};
+  const hasUserData = USERS.some((userName) => {
+    const user = users[userName] || {};
+    const plans = Object.values(user.plans || {}).filter(Boolean);
+    const messages = (user.messages || []).filter((message) => !isDefaultCoachWelcome(message));
+    return plans.length > 0 || (user.checkins || []).length > 0 || messages.length > 0;
+  });
+  const groupMessages = (candidate.groupMessages || []).filter((message) => !isDefaultGroupWelcome(message));
+  return hasUserData || groupMessages.length > 0;
+}
+
 function scheduleServerSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
@@ -98,7 +118,8 @@ async function syncFromServer({ notify = false } = {}) {
     if (!response.ok) return;
     const data = await response.json();
     if (!data.state || !data.state.updatedAt) return;
-    if ((data.state.updatedAt || 0) <= (state.updatedAt || 0)) return;
+    const serverIsNewer = (data.state.serverSavedAt || data.state.updatedAt || 0) > (state.serverSavedAt || state.updatedAt || 0);
+    if (!serverIsNewer && hasMeaningfulLocalState(state)) return;
 
     const previousCount = state.groupMessages.length;
     isHydrating = true;

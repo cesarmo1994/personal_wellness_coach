@@ -113,6 +113,7 @@ Durante la beta:
 - `app_state.json` sigue funcionando como respaldo local.
 - Supabase se vuelve la fuente persistente para mensajes.
 - Si Supabase no esta configurado, la app no se rompe y sigue usando el flujo anterior.
+- Un dispositivo sin historia real debe aceptar la historia del servidor aunque su `updatedAt` local sea mas reciente por haber abierto la app.
 
 ## Como validar
 
