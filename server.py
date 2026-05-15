@@ -483,6 +483,36 @@ def message_to_client(row, personal_user=None):
     return message
 
 
+def dedupe_client_messages(messages):
+    deduped = []
+    seen_defaults = set()
+    for message in messages:
+        text = (message.get("text") or "").strip()
+        role = message.get("role", "")
+        sender = message.get("sender", "")
+        if not text:
+            continue
+
+        default_key = (role, sender, text)
+        if role in {"coach", "system"} and text.startswith(("Bienvenido.", "Chat grupal listo.")):
+            if default_key in seen_defaults:
+                continue
+            seen_defaults.add(default_key)
+
+        if deduped:
+            previous = deduped[-1]
+            same_content = (
+                previous.get("role") == role
+                and previous.get("sender", "") == sender
+                and (previous.get("text") or "").strip() == text
+            )
+            if same_content:
+                continue
+
+        deduped.append(message)
+    return deduped
+
+
 def sync_chats_to_supabase(state):
     if not get_supabase_config() or not isinstance(state, dict):
         return
@@ -571,7 +601,9 @@ def load_chats_from_supabase(state):
             500,
         )
         if rows:
-            users[user_name]["messages"] = [message_to_client(row, personal_user=user_name) for row in rows]
+            users[user_name]["messages"] = dedupe_client_messages(
+                [message_to_client(row, personal_user=user_name) for row in rows]
+            )
 
     team = supabase_select_one("teams", {"slug": f"eq.{DEFAULT_GROUP_SLUG}"}, "id")
     if team:
@@ -585,7 +617,7 @@ def load_chats_from_supabase(state):
                 800,
             )
             if rows:
-                state["groupMessages"] = [
+                state["groupMessages"] = dedupe_client_messages([
                     {
                         **message_to_client(row),
                         "sender": (
@@ -595,7 +627,7 @@ def load_chats_from_supabase(state):
                         ),
                     }
                     for row in rows
-                ]
+                ])
     return prune_state(state)
 
 

@@ -114,6 +114,7 @@ Durante la beta:
 - Supabase se vuelve la fuente persistente para mensajes.
 - Si Supabase no esta configurado, la app no se rompe y sigue usando el flujo anterior.
 - Un dispositivo sin historia real debe aceptar la historia del servidor aunque su `updatedAt` local sea mas reciente por haber abierto la app.
+- Al hidratar desde Supabase, el backend deduplica mensajes consecutivos identicos y mensajes default repetidos para limpiar duplicados generados durante pruebas/autosaves.
 
 ## Como validar
 
