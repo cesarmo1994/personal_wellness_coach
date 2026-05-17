@@ -183,6 +183,19 @@
 
             <button class="primary-action" type="submit">Enviar check-in</button>
           </form>
+
+          <article class="reminder-card">
+            <div>
+              <span>Recordatorio diario</span>
+              <strong>No dejar el check-in para mañana</strong>
+              <small id="notification-status">Pendiente de activar en este dispositivo.</small>
+            </div>
+            <label>
+              Hora
+              <input id="daily-reminder-time" type="time" value="21:00" />
+            </label>
+            <button class="secondary-action compact-action" id="enable-notifications" type="button">Activar notificaciones</button>
+          </article>
         </section>
 
         <section class="view" id="view-group">
@@ -205,8 +218,6 @@
             <input id="group-chat-input" type="text" autocomplete="off" placeholder="Escribe al grupo. Usa @coach para pedir opinion." />
             <button class="send-button" type="submit">Enviar</button>
           </form>
-          <button class="secondary-action compact-action" id="enable-notifications" type="button">Activar notificaciones</button>
-
           <article class="coach-note">
             <strong>Regla del coach</strong>
             <p id="group-note">El coach solo responde cuando alguien lo etiqueta con @coach.</p>

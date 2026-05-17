@@ -1,4 +1,5 @@
 const STORAGE_KEY = "pichudos-app-state-v4";
+const DEFAULT_REMINDER_TIME = "21:00";
 const PRODUCTION_APP_URL = "https://personal-wellness-coach.onrender.com";
 const FALLBACK_USER = "Admin";
 const REMOVED_BETA_USERS = ["David", "Pri", "Ana", "César", "Cesar"];
@@ -9,6 +10,7 @@ let authAccessToken = null;
 let authReady = false;
 let groupRealtimeChannel = null;
 let realtimeSyncTimer = null;
+let reminderTimer = null;
 let adminFilter = "all";
 let selectedAdminUser = "";
 
@@ -33,6 +35,12 @@ const defaultState = {
   activeView: "onboarding",
   users: Object.fromEntries(USERS.map((name) => [name, emptyUser()])),
   updatedAt: 0,
+  notifications: {
+    enabled: false,
+    dailyTime: DEFAULT_REMINDER_TIME,
+    lastReminderDate: "",
+    permission: "default",
+  },
   groupMessages: [
     {
       role: "system",
@@ -76,6 +84,7 @@ function loadState() {
   try {
     const parsed = JSON.parse(saved);
     const next = { ...structuredClone(defaultState), ...parsed };
+    next.notifications = { ...structuredClone(defaultState.notifications), ...(parsed.notifications || {}) };
     for (const user of USERS) {
       next.users[user] = { ...emptyUser(), ...(next.users?.[user] || {}) };
     }
@@ -227,6 +236,7 @@ function renderAuth() {
 function saveState() {
   state.updatedAt = Date.now();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  scheduleDailyReminder();
   if (!isHydrating) scheduleServerSave();
 }
 
@@ -346,12 +356,116 @@ function currentUser() {
 
 function setView(view) {
   state.activeView = view;
+  if (location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
   saveState();
   render();
 }
 
+function applyHashView() {
+  const view = location.hash.replace("#", "");
+  if (!view || !subtitles[view]) return;
+  state.activeView = view;
+  saveState();
+}
+
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function hasCheckinToday(userName = state.activeUser) {
+  return Boolean(state.users[userName]?.checkins?.some((checkin) => checkin.date === todayKey()));
+}
+
+function notificationPermission() {
+  if (typeof Notification === "undefined") return "unsupported";
+  return Notification.permission;
+}
+
+function notificationStatusText() {
+  const permission = notificationPermission();
+  if (permission === "unsupported") return "Este navegador no soporta notificaciones.";
+  if (permission === "denied") return "Bloqueadas por el navegador.";
+  if (state.notifications.enabled && permission === "granted") {
+    return `Recordatorio diario activo a las ${state.notifications.dailyTime}.`;
+  }
+  if (permission === "granted") return "Permiso concedido. Activa el recordatorio diario.";
+  return "Pendiente de activar en este dispositivo.";
+}
+
+async function showAppNotification(title, options = {}) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  const payload = {
+    icon: "/icon.svg",
+    badge: "/icon.svg",
+    ...options,
+  };
+  if ("serviceWorker" in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification(title, payload);
+      return;
+    } catch {
+      // Fall back to the page-level Notification API.
+    }
+  }
+  new Notification(title, payload);
+}
+
+function msUntilNextReminder(timeValue) {
+  const [hours, minutes] = String(timeValue || DEFAULT_REMINDER_TIME).split(":").map(Number);
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(Number.isFinite(hours) ? hours : 21, Number.isFinite(minutes) ? minutes : 0, 0, 0);
+  if (next <= now || hasCheckinToday()) next.setDate(next.getDate() + 1);
+  return Math.max(1000, next.getTime() - now.getTime());
+}
+
+async function runDailyReminder() {
+  const today = todayKey();
+  if (!state.notifications.enabled || notificationPermission() !== "granted") return;
+  if (hasCheckinToday() || state.notifications.lastReminderDate === today) return;
+  state.notifications.lastReminderDate = today;
+  saveState();
+  await showAppNotification("Check-in pendiente", {
+    body: "Cierra tu check-in diario y deja evidencia antes de terminar el dia.",
+    tag: `pichudos-checkin-${today}`,
+    renotify: true,
+    data: { view: "checkin" },
+  });
+}
+
+function scheduleDailyReminder() {
+  clearTimeout(reminderTimer);
+  if (!state.notifications?.enabled || notificationPermission() !== "granted") return;
+  reminderTimer = setTimeout(() => {
+    runDailyReminder().finally(scheduleDailyReminder);
+  }, msUntilNextReminder(state.notifications.dailyTime));
+}
+
+async function enableNotifications() {
+  if (notificationPermission() === "unsupported") {
+    addGroupMessage("system", "Sistema", "Este navegador no soporta notificaciones.");
+    render();
+    return;
+  }
+  if ("serviceWorker" in navigator) {
+    try {
+      await navigator.serviceWorker.register("/sw.js");
+    } catch {
+      // Notifications can still work through the page API in supported browsers.
+    }
+  }
+  const permission = await Notification.requestPermission();
+  state.notifications.permission = permission;
+  state.notifications.enabled = permission === "granted";
+  if (permission === "granted") {
+    addGroupMessage("system", "Sistema", `Recordatorios activados a las ${state.notifications.dailyTime}.`);
+    scheduleDailyReminder();
+  } else {
+    addGroupMessage("system", "Sistema", "No se activaron notificaciones. Podes habilitarlas desde permisos del navegador.");
+  }
+  saveState();
+  render();
 }
 
 function weeklyCount(userName = state.activeUser) {
@@ -622,6 +736,7 @@ function render() {
   renderProgress();
   renderPlans();
   renderPersonalChat();
+  renderReminderSettings();
   renderGroup();
   renderAdmin();
 }
@@ -643,6 +758,19 @@ function renderProgress() {
   document.querySelectorAll("[data-weekly-progress]").forEach((bar) => {
     bar.style.width = `${Math.round((count / 7) * 100)}%`;
   });
+}
+
+function renderReminderSettings() {
+  const timeInput = document.querySelector("#daily-reminder-time");
+  const status = document.querySelector("#notification-status");
+  const enableButton = document.querySelector("#enable-notifications");
+  if (timeInput) timeInput.value = state.notifications?.dailyTime || DEFAULT_REMINDER_TIME;
+  if (status) status.textContent = notificationStatusText();
+  if (enableButton) {
+    const permission = notificationPermission();
+    enableButton.textContent = state.notifications.enabled && permission === "granted" ? "Actualizar recordatorio" : "Activar notificaciones";
+    enableButton.disabled = permission === "unsupported" || permission === "denied";
+  }
 }
 
 function renderPlans() {
@@ -968,19 +1096,13 @@ document.querySelector("#group-chat-form").addEventListener("submit", async (eve
 });
 
 document.querySelector("#enable-notifications").addEventListener("click", async () => {
-  if (typeof Notification === "undefined") {
-    addGroupMessage("system", "Sistema", "Este navegador no soporta notificaciones.");
-    render();
-    return;
-  }
-  const permission = await Notification.requestPermission();
-  addGroupMessage(
-    "system",
-    "Sistema",
-    permission === "granted"
-      ? "Notificaciones activadas en este dispositivo mientras la app este abierta o en segundo plano."
-      : "No se activaron notificaciones. Podes habilitarlas desde permisos del navegador."
-  );
+  await enableNotifications();
+});
+
+document.querySelector("#daily-reminder-time").addEventListener("change", (event) => {
+  state.notifications.dailyTime = event.target.value || DEFAULT_REMINDER_TIME;
+  state.notifications.enabled = state.notifications.enabled && notificationPermission() === "granted";
+  saveState();
   render();
 });
 
@@ -1054,7 +1176,9 @@ document.querySelector("#logout-button").addEventListener("click", () => {
 });
 
 initAuth().finally(() => syncFromServer({ force: true })).finally(() => {
+  applyHashView();
   render();
+  scheduleDailyReminder();
   lastSeenGroupMessageCount = state.groupMessages.length;
 });
 
@@ -1066,6 +1190,11 @@ document.addEventListener("visibilitychange", () => {
 
 window.addEventListener("focus", () => {
   scheduleRealtimeSync();
+});
+
+window.addEventListener("hashchange", () => {
+  applyHashView();
+  render();
 });
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {

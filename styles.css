@@ -355,6 +355,27 @@ h2 {
   gap: 12px;
 }
 
+.reminder-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px;
+}
+
+.reminder-card > div {
+  display: grid;
+  gap: 4px;
+}
+
+.reminder-card span,
+.reminder-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .group-chat-thread {
   background: var(--surface);
   border: 1px solid var(--line);
